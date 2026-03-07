@@ -1,0 +1,9 @@
+Input: forum-13crafb.fixed040-Forb.dzn
+============================================================
+Total Runtime: 0.4853 seconds
+Input parsing: 0.0010 seconds
+Constraint building: 0.2402 seconds
+MaxSAT solving: 0.0602 seconds
+============================================================
+
+NO SOLUTION FOUND
