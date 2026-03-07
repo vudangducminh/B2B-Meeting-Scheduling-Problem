@@ -11,15 +11,17 @@ import subprocess
 import time
 
 out = sys.stdout
-sys.stdin = open('./input/tic-12.original.dzn', 'r')
-sys.stdout = open('./output/tic-12.original.dzn', 'w')
+inp = './input/ticf-13crafb.original.dzn'
+out = './output/ticf-13crafb.original.dzn'
+sys.stdin = open(inp, 'r')
+sys.stdout = open(out, 'w')
 
 sat_solver = Glucose3()
 cnf = CNF()
 wcnf = WCNF()
 variable_size = 0
 def read_input():
-    with open('input.txt', 'r') as f:
+    with open(inp, 'r') as f:
         lines = f.readlines()
     
     # Read the initial variables
