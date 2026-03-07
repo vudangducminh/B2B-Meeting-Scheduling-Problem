@@ -11,8 +11,8 @@ import subprocess
 import time
 
 out = sys.stdout
-sys.stdin = open('input.txt', 'r')
-sys.stdout = open('output.txt', 'w')
+sys.stdin = open('./input/tic-12.original.dzn', 'r')
+sys.stdout = open('./output/tic-12.original.dzn', 'w')
 
 sat_solver = Glucose3()
 cnf = CNF()
@@ -202,43 +202,18 @@ def read_input():
     
     return nBusiness, nMeetings, nTables, nTotalSlots, nMorningSlots, requested, meetingsxBusiness, nMeetingsBusiness, forbidden, fixed, precedences
 
-# Usage
 start_time = time.time()
-print(f"Starting execution at {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(start_time))}", file=out)
-
 nBusiness, nMeetings, nTables, nTotalSlots, nMorningSlots, requested, meetingsxBusiness, nMeetingsBusiness, forbidden, fixed, precedences = read_input()
 input_time = time.time()
-print(f"Input parsing completed in {input_time - start_time:.4f} seconds", file=out)
+print(f"Input parsing completed in {input_time - start_time:.4f} seconds")
 
-def print_solution(n):
-
-    sat_solver.append_formula(cnf)
-    print(f"Number of vars: {sat_solver.nof_vars()}")
-    print(f"Number of clauses: {sat_solver.nof_clauses()}")
-
-    sat_status = sat_solver.solve()
-
-    if sat_status is False:
-        print("No solutions found")
-    else:
-        solution = sat_solver.get_model()
-        if solution is None:
-            print("Time out")
-        else:
-            print(f"Solution found: {solution}")
-            for i, val in enumerate(solution, start=1):
-                if i <= n:
-                    print(f"X{i} = {int(val > 0)}") 
-
-read_input()
-
-print(nBusiness, nMeetings, nTables, nTotalSlots, nMorningSlots)
-print("Requested:", requested)
-print("MeetingsxBusiness:", meetingsxBusiness)
-print("nMeetingsBusiness:", nMeetingsBusiness)
-print("Forbidden:", forbidden)
-print("Fixed:", fixed)
-print("Precedences:", precedences)
+# print(nBusiness, nMeetings, nTables, nTotalSlots, nMorningSlots)
+# print("Requested:", requested)
+# print("MeetingsxBusiness:", meetingsxBusiness)
+# print("nMeetingsBusiness:", nMeetingsBusiness)
+# print("Forbidden:", forbidden)
+# print("Fixed:", fixed)
+# print("Precedences:", precedences)
 
 # x[m][t] = 1 if meeting m is scheduled at time slot t, 0 otherwise
 x = [[0 for _ in range(nTotalSlots + 1)] for _ in range(nMeetings + 1)]
@@ -297,7 +272,7 @@ for p in range(1, nBusiness + 1):
     for t in range(1, nTotalSlots + 1):
         y[p][t] = variable_size + 1
         variable_size += 1 
-print(y)
+# print(y)
 for p in range(1, nBusiness + 1):
     for t in range(1, nTotalSlots + 1):
         z[p][t] = variable_size + 1
@@ -315,9 +290,6 @@ for p in range(1, nBusiness + 1):
     clauses = CardEnc.equals(lits=lits, bound=nMeetingsBusiness[p], encoding=EncType.seqcounter, top_id=variable_size)
     cnf.extend(clauses)
     variable_size = max(variable_size, clauses.nv)
-
-# Debug
-# print_solution(variable_size)
 
 # x[m][t] <= y[p][t]
 for p in range(1, nBusiness + 1):
@@ -399,7 +371,7 @@ for p in range(1, nBusiness + 1):
         wcnf.append([-h[p][t]], weight=1)
 
 constraint_time = time.time()
-print(f"Constraint building completed in {constraint_time - input_time:.4f} seconds", file=out)
+print(f"Constraint building completed in {constraint_time - input_time:.4f} seconds")
 
 def solve_maxsat():
     """
@@ -415,7 +387,7 @@ def solve_maxsat():
     # Get the cost (number of unsatisfied soft clauses)
     if model:
         cost = solver.cost
-        print(f"MaxSAT solution found with cost: {cost}", file=out)
+        print(f"MaxSAT solution found with cost: {cost}")
     
     return model
 
@@ -426,18 +398,79 @@ wcnf.to_file('maxHS.wcnf')
 solve_start = time.time()
 assignment = solve_maxsat()
 solve_time = time.time()
-print(f"MaxSAT solving completed in {solve_time - solve_start:.4f} seconds", file=out)
+print(f"MaxSAT solving completed in {solve_time - solve_start:.4f} seconds")
 
 print(assignment)
+
+end_time = time.time()
+total_time = end_time - start_time
+
 # Output the schedule based on the assignment
+
 if assignment:
     for m in range(1, nMeetings + 1):
         for t in range(1, nTotalSlots + 1):
             if x[m][t] in assignment:
                 print(f"Meeting {m} → Time slot {t}")
 
-end_time = time.time()
-total_time = end_time - start_time
-print(f"\n{'='*60}", file=out)
-print(f"TOTAL RUNTIME: {total_time:.4f} seconds ({total_time:.2f}s)", file=out)
-print(f"{'='*60}", file=out)
+print(f"\n{'='*60}")
+print(f"TOTAL RUNTIME: {total_time:.4f} seconds ({total_time:.2f}s)")
+print(f"{'='*60}")
+
+# Add checker
+if assignment:
+    # Create a mapping of variable numbers to their assigned values
+    var_assignment = {abs(var): (var > 0) for var in assignment}
+    print("Checking solution")
+    # Check hard constraints
+    # Each meeting happens exactly once
+    for m in range(1, nMeetings + 1):
+        count = sum(var_assignment.get(x[m][t], False) for t in range(1, nTotalSlots + 1))
+        assert count == 1, f"Meeting {m} does not happen exactly once (count={count})"
+    
+    # No more than nTables meetings at the same time
+    for t in range(1, nTotalSlots + 1):
+        count = sum(var_assignment.get(x[m][t], False) for m in range(1, nMeetings + 1))
+        assert count <= nTables, f"More than {nTables} meetings at time slot {t} (count={count})"
+    
+    # At most one meeting at moment t for the same business
+    for p in range(1, nBusiness + 1):
+        for t in range(1, nTotalSlots + 1):
+            count = sum(var_assignment.get(x[m][t], False) for m in meetingsxBusiness[p])
+            assert count <= 1, f"More than one meeting for business {p} at time slot {t} (count={count})"
+    
+    # Handle time session
+    for m in range(1, nMeetings + 1):
+        if requested[m][2] == 3: # No time restriction
+            continue
+        elif requested[m][2] == 1: # Morning
+            for t in range(nMorningSlots + 1, nTotalSlots + 1):
+                assert not var_assignment.get(x[m][t], False), f"Meeting {m} should be in the morning but is scheduled at time slot {t}"
+        else: # Afternoon
+            for t in range(1, nMorningSlots + 1):
+                assert not var_assignment.get(x[m][t], False), f"Meeting {m} should be in the afternoon but is scheduled at time slot {t}"
+    
+    # Check forbidden time slots
+    for p in range(1, nBusiness + 1):
+        for t in forbidden[p]:
+            assert not var_assignment.get(y[p][t], False), f"Business {p} has a meeting at forbidden time slot {t}"
+    
+    # Check fixed meetings
+    for m in range(1, nMeetings + 1):
+        if fixed[m] != 0:
+            t = fixed[m]
+            assert var_assignment.get(x[m][t], False), f"Meeting {m} should be scheduled at time slot {t} but is not"
+    
+    # Check precedence constraints
+    for m in range(1, nMeetings + 1):
+        for prec in precedences[m]:
+            prec_time = None
+            m_time = None
+            for t in range(1, nTotalSlots + 1):
+                if var_assignment.get(x[prec][t], False):
+                    prec_time = t
+                if var_assignment.get(x[m][t], False):
+                    m_time = t
+            assert prec_time is not None and m_time is not None, f"Precedence constraint between meeting {prec} and {m} is not satisfied (prec_time={prec_time}, m_time={m_time})"
+            assert prec_time < m_time, f"Meeting {prec} should be scheduled before meeting {m} (prec_time={prec_time}, m_time={m_time})"
+    print("All constraints are satisfied")
