@@ -16,18 +16,25 @@ import glob
 input_files = sorted(glob.glob('./input/*.dzn'))
 # print(f"Found {len(input_files)} input files to process")
 
+test_counter = 0
 for input_file in input_files:
+    test_counter += 1
+    # Already solved these tests
+    if test_counter <= 0 * 8:
+        continue    
     # Get base filename
     base_name = os.path.basename(input_file)
     output_file = f'./output/{base_name}'
     
     print(f"\n{'='*60}")
     print(f"Processing: {base_name}")
+    print(f"Test number: {test_counter}")
     print(f"{'='*60}")
     
     in_path = input_file
     out_path = output_file
-    
+    if 'original' not in in_path:
+        continue
     # Reset variables for each input file
     sat_solver = Glucose3()
     cnf = CNF()
@@ -244,10 +251,21 @@ for input_file in input_files:
 
     # Each meeting happened exactly once
     for m in range(1, nMeetings + 1):
-        lits = [x[m][t] for t in range(1, nTotalSlots + 1)]
-        clauses = CardEnc.equals(lits=lits, bound=1, encoding=EncType.seqcounter, top_id=variable_size)
-        cnf.extend(clauses)
-        variable_size = max(variable_size, clauses.nv)
+        if requested[m][2] == 3: # No time restriction
+            lits = [x[m][t] for t in range(1, nTotalSlots + 1)]
+            clauses = CardEnc.equals(lits=lits, bound=1, encoding=EncType.seqcounter, top_id=variable_size)
+            cnf.extend(clauses)
+            variable_size = max(variable_size, clauses.nv)
+        elif requested[m][2] == 1: # Morning
+            lits = [x[m][t] for t in range(1, nMorningSlots + 1)]
+            clauses = CardEnc.equals(lits=lits, bound=1, encoding=EncType.seqcounter, top_id=variable_size)
+            cnf.extend(clauses)
+            variable_size = max(variable_size, clauses.nv)
+        else: # Afternoon
+            lits = [x[m][t] for t in range(nMorningSlots + 1, nTotalSlots + 1)]
+            clauses = CardEnc.equals(lits=lits, bound=1, encoding=EncType.seqcounter, top_id=variable_size)
+            cnf.extend(clauses)
+            variable_size = max(variable_size, clauses.nv)
 
     # No more than nTables meetings at the same time
     for t in range(1, nTotalSlots + 1):
@@ -298,7 +316,91 @@ for input_file in input_files:
         for t in range(1, nTotalSlots + 1):
             h[p][t] = variable_size + 1
             variable_size += 1
+    # Maximum number of breaks per participant is floor((|T|-1)/2)
+    max_break_count = (nTotalSlots - 1) // 2
 
+    # Build sortedHole[p][j], j in 1..floor((|T|-1)/2)
+    sortedHole = [[0 for _ in range(max_break_count + 1)] for _ in range(nBusiness + 1)]
+
+    for p in range(1, nBusiness + 1):
+        for j in range(1, max_break_count + 1):
+            sortedHole[p][j] = variable_size + 1
+            variable_size += 1
+    
+    for p in range(1, nBusiness + 1):
+        end_lits = [h[p][t] for t in range(1, nTotalSlots)]  # endHole over 1..|T|-1
+
+        for j in range(1, max_break_count + 1):
+            s = sortedHole[p][j]
+
+            # s -> AtLeast(j, end_lits)
+            atleast_j = CardEnc.atleast(
+                lits=end_lits, bound=j, encoding=EncType.seqcounter, top_id=variable_size
+            )
+            variable_size = max(variable_size, atleast_j.nv)
+            for c in atleast_j.clauses:
+                cnf.append([-s] + c)
+
+            # ¬s -> AtMost(j-1, end_lits)   (equivalently s ∨ clause)
+            atmost_jm1 = CardEnc.atmost(
+                lits=end_lits, bound=j - 1, encoding=EncType.seqcounter, top_id=variable_size
+            )
+            variable_size = max(variable_size, atmost_jm1.nv)
+            for c in atmost_jm1.clauses:
+                cnf.append([s] + c)
+
+            # Optional (redundant but useful): monotonic unary order
+            # sortedHole[p][j+1] -> sortedHole[p][j]
+            if j < max_break_count:
+                cnf.append([-sortedHole[p][j + 1], sortedHole[p][j]])
+
+    # max[j] and min[j] are unary bounds on maximum/minimum breaks among participants.
+    max_break = [0 for _ in range(max_break_count + 1)]
+    min_break = [0 for _ in range(max_break_count + 1)]
+    dif = [0 for _ in range(max_break_count + 1)]
+
+    for j in range(1, max_break_count + 1):
+        max_break[j] = variable_size + 1
+        variable_size += 1
+    for j in range(1, max_break_count + 1):
+        min_break[j] = variable_size + 1
+        variable_size += 1
+    for j in range(1, max_break_count + 1):
+        dif[j] = variable_size + 1
+        variable_size += 1
+
+    # (37) sortedHole[p][j] -> max[j]
+    for p in range(1, nBusiness + 1):
+        for j in range(1, max_break_count + 1):
+            cnf.append([-sortedHole[p][j], max_break[j]])
+
+    # (38) not sortedHole[p][j] -> not min[j]   (equiv. min[j] -> sortedHole[p][j])
+    for p in range(1, nBusiness + 1):
+        for j in range(1, max_break_count + 1):
+            cnf.append([-min_break[j], sortedHole[p][j]])
+
+    # Keep unary representations monotone: v[j+1] -> v[j]
+    for j in range(1, max_break_count):
+        cnf.append([-max_break[j + 1], max_break[j]])
+        cnf.append([-min_break[j + 1], min_break[j]])
+
+    # (39) not min[j] and max[j] -> dif[j]
+    for j in range(1, max_break_count + 1):
+        cnf.append([min_break[j], -max_break[j], dif[j]])
+
+    # (40) atMost(d, {dif[j]})
+    fairness_d = 2
+    if max_break_count > 0:
+        fairness_lits = [dif[j] for j in range(1, max_break_count + 1)]
+        fairness_clauses = CardEnc.atmost(
+            lits=fairness_lits,
+            bound=min(fairness_d, len(fairness_lits)),
+            encoding=EncType.seqcounter,
+            top_id=variable_size,
+        )
+        cnf.extend(fairness_clauses)
+        variable_size = max(variable_size, fairness_clauses.nv)
+    
     # Business p has nMeetingsBusiness[p] meetings
     for p in range(1, nBusiness + 1):
         lits = [y[p][t] for t in range(1, nTotalSlots + 1)]
@@ -323,32 +425,33 @@ for input_file in input_files:
         for t in range(2, nTotalSlots + 1):
             cnf.append([-z[p][t-1], z[p][t]])
 
+    # x[m][t] -> y[p1][t] and y[p2][t]
+    for m in range(1, nMeetings + 1):
+        for t in range(1, nTotalSlots + 1):
+            p1 = requested[m][0]
+            p2 = requested[m][1]
+            cnf.append([-x[m][t], y[p1][t]])
+            cnf.append([-x[m][t], y[p2][t]])
+
+    # y[p][t] -> x[m][t] for some m in meetingsxBusiness[p]
+    for p in range(1, nBusiness + 1):
+        for t in range(1, nTotalSlots + 1):
+            lits = [x[m][t] for m in meetingsxBusiness[p]]
+            cnf.append([-y[p][t]] + lits)
+
     # y[p][t+1] + not h[p][t] + z[p][t] + not y[p][t] <= 3
     for p in range(1, nBusiness + 1):
         for t in range(1, nTotalSlots):
             cnf.append([-y[p][t+1], h[p][t], -z[p][t], y[p][t]])
 
-    # sum(h[p][t]) <= upper_bound for each business p, where upper_bound is the maximum number of allowed break interruptions
-
-    # upper_bound = nTotalSlots # Adjust this value later
-    # fairness = 2 # Adjust this value later
-    # for p in range(1, nBusiness + 1):
-    #     lits = [h[p][t] for t in range(1, nTotalSlots + 1)]
-    #     clauses = CardEnc.atmost(lits=lits, bound=upper_bound, encoding=EncType.seqcounter, top_id=variable_size)
-    #     cnf.extend(clauses)
-    #     variable_size = max(variable_size, clauses.nv)
-
-    # lower_bound = upper_bound - fairness
-    # # sum(h[p][t]) >= lower_bound for each business p
-    # for p in range(1, nBusiness + 1):
-    #     lits = [h[p][t] for t in range(1, nTotalSlots + 1)]
-    #     clauses = CardEnc.atleast(lits=lits, bound=lower_bound, encoding=EncType.seqcounter, top_id=variable_size)
-    #     cnf.extend(clauses)
-    #     variable_size = max(variable_size, clauses.nv)
-
-    # The objective function: minimize sum(h[p][t]) for all p and t
-    # So the hard constraints are implemented as above, and the soft constraint is maximizing the sum of not h[p][t], which is equivalent to minimizing the sum of h[p][t].
-    # => MaxSAT
+    # The number of participants having a meeting in a given time slot is bounded by twice the number of available locations.
+    for t in range(1, nTotalSlots + 1):
+        lits = [y[p][t] for p in range(1, nBusiness + 1)]
+        clauses = CardEnc.atmost(lits=lits, bound=2*nTables, encoding=EncType.seqcounter, top_id=variable_size)
+        cnf.extend(clauses)
+        variable_size = max(variable_size, clauses.nv)
+    # (41) Objective soft clauses: not sortedHole[p][j]
+    # Every true sortedHole contributes +1 to the MaxSAT cost.
 
     # Handle forbidden time slots
     for p in range(1, nBusiness + 1):
@@ -381,14 +484,15 @@ for input_file in input_files:
     for clause in cnf.clauses:
         wcnf.append(clause)  # Default weight is top (hard)
 
-    # Add soft clauses
+    # Add soft clauses from (41)
     for p in range(1, nBusiness + 1):
-        for t in range(1, nTotalSlots + 1):
-            wcnf.append([-h[p][t]], weight=1)
+        for j in range(1, max_break_count + 1):
+            wcnf.append([-sortedHole[p][j]], weight=1)
 
     constraint_time = time.time()
     print(f"Constraint building completed in {constraint_time - input_time:.4f} seconds")
-
+    print(f"Total variables: {variable_size}")
+    print(f"Total clauses: {len(cnf.clauses)}")
     class TimeoutError(Exception):
         pass
 
@@ -396,10 +500,6 @@ for input_file in input_files:
         raise TimeoutError("Solver timeout after 1 hour")
 
     def solve_maxsat():
-        """
-        Solve MaxSAT using pysat's built-in RC2 solver.
-        Returns the model (variable assignment) if found, None otherwise.
-        """
         # Set timeout to 1 hour (3600 seconds)
         signal.signal(signal.SIGALRM, timeout_handler)
         signal.alarm(3600)
@@ -413,23 +513,25 @@ for input_file in input_files:
             
             # Get the cost (number of unsatisfied soft clauses)
             if model:
-                cost = solver.cost
-                print(f"MaxSAT solution found with cost: {cost}")
+                solution_cost = solver.cost
+                print(f"MaxSAT solution found with cost: {solution_cost}")
+            else:
+                solution_cost = None
             
             # Cancel the alarm if solver finishes before timeout
             signal.alarm(0)
-            return model
+            return model, solution_cost
         except TimeoutError as e:
             signal.alarm(0)
             print(f"TIMEOUT: {str(e)}")
-            return None
+            return None, None
 
     # Write the WCNF to a file
     wcnf.to_file('maxHS.wcnf')
 
     # Solve
     solve_start = time.time()
-    assignment = solve_maxsat()
+    assignment, cost = solve_maxsat()
     solve_time = time.time()
     print(f"MaxSAT solving completed in {solve_time - solve_start:.4f} seconds")
 
@@ -459,73 +561,161 @@ for input_file in input_files:
         f.write(f"Constraint building: {constraint_time - input_time:.4f} seconds\n")
         f.write(f"MaxSAT solving: {solve_time - solve_start:.4f} seconds\n")
         f.write(f"{'='*60}\n\n")
-        
+        f.write("Total variables: {}\n".format(variable_size))
+        f.write("Total clauses: {}\n".format(len(cnf.clauses)))
+        f.write("MaxSAT found with cost: {}\n".format(cost if cost is not None else "N/A"))
         if assignment:
+            # Checker
             f.write("SCHEDULE:\n")
             for m in range(1, nMeetings + 1):
                 for t in range(1, nTotalSlots + 1):
                     if x[m][t] in assignment:
                         f.write(f"Meeting {m} → Time slot {t}\n")
-            f.write("\nSOLUTION VERIFIED: All constraints satisfied\n")
+            # Create a mapping of variable numbers to their assigned values
+            var_assignment = {abs(var): (var > 0) for var in assignment}
+            f.write("Checking hard constraints...\n")
+
+            # Helper: variable truth in assignment
+            def is_true(var_id):
+                return var_assignment.get(var_id, False)
+
+            # Check hard constraints
+            # Each meeting happens exactly once
+            for m in range(1, nMeetings + 1):
+                count = sum(is_true(x[m][t]) for t in range(1, nTotalSlots + 1))
+                assert count == 1, f"Meeting {m} does not happen exactly once (count={count})"
+            
+            # No more than nTables meetings at the same time
+            for t in range(1, nTotalSlots + 1):
+                count = sum(is_true(x[m][t]) for m in range(1, nMeetings + 1))
+                assert count <= nTables, f"More than {nTables} meetings at time slot {t} (count={count})"
+            
+            # At most one meeting at moment t for the same business
+            for p in range(1, nBusiness + 1):
+                for t in range(1, nTotalSlots + 1):
+                    count = sum(is_true(x[m][t]) for m in meetingsxBusiness[p])
+                    assert count <= 1, f"More than one meeting for business {p} at time slot {t} (count={count})"
+            
+            # Handle time session
+            for m in range(1, nMeetings + 1):
+                if requested[m][2] == 3: # No time restriction
+                    continue
+                elif requested[m][2] == 1: # Morning
+                    for t in range(nMorningSlots + 1, nTotalSlots + 1):
+                        assert not is_true(x[m][t]), f"Meeting {m} should be in the morning but is scheduled at time slot {t}"
+                else: # Afternoon
+                    for t in range(1, nMorningSlots + 1):
+                        assert not is_true(x[m][t]), f"Meeting {m} should be in the afternoon but is scheduled at time slot {t}"
+
+            # y constraints: exact count and x -> y
+            for p in range(1, nBusiness + 1):
+                y_count = sum(is_true(y[p][t]) for t in range(1, nTotalSlots + 1))
+                assert y_count == nMeetingsBusiness[p], (
+                    f"Business {p} has wrong number of occupied slots in y "
+                    f"(got={y_count}, expected={nMeetingsBusiness[p]})"
+                )
+                for t in range(1, nTotalSlots + 1):
+                    has_x = any(is_true(x[m][t]) for m in meetingsxBusiness[p])
+                    assert is_true(y[p][t]) == has_x, (
+                        f"y[{p}][{t}] inconsistent with x variables "
+                        f"(y={is_true(y[p][t])}, has_x={has_x})"
+                    )
+
+            # y -> z and z monotonicity
+            for p in range(1, nBusiness + 1):
+                for t in range(1, nTotalSlots + 1):
+                    assert (not is_true(y[p][t])) or is_true(z[p][t]), (
+                        f"z[{p}][{t}] should be true when y[{p}][{t}] is true"
+                    )
+                for t in range(2, nTotalSlots + 1):
+                    assert (not is_true(z[p][t - 1])) or is_true(z[p][t]), (
+                        f"z monotonicity violated for business {p} between t={t-1} and t={t}"
+                    )
+
+            # h implication: y[p][t+1] and z[p][t] and not y[p][t] -> h[p][t]
+            for p in range(1, nBusiness + 1):
+                for t in range(1, nTotalSlots):
+                    antecedent = is_true(y[p][t + 1]) and is_true(z[p][t]) and (not is_true(y[p][t]))
+                    assert (not antecedent) or is_true(h[p][t]), (
+                        f"h[{p}][{t}] should be true by break implication"
+                    )
+
+            # Participant load bound per slot
+            for t in range(1, nTotalSlots + 1):
+                participants_at_t = sum(is_true(y[p][t]) for p in range(1, nBusiness + 1))
+                assert participants_at_t <= 2 * nTables, (
+                    f"Too many participants at slot {t} (count={participants_at_t}, bound={2*nTables})"
+                )
+
+            # (36) sortedHole semantics induced by h variables
+            for p in range(1, nBusiness + 1):
+                break_count = sum(is_true(h[p][t]) for t in range(1, nTotalSlots))
+                for j in range(1, max_break_count + 1):
+                    expected_sorted = (break_count >= j)
+                    assert is_true(sortedHole[p][j]) == expected_sorted, (
+                        f"sortedHole[{p}][{j}] inconsistent with break count "
+                        f"(break_count={break_count})"
+                    )
+
+            # (37) sortedHole[p][j] -> max[j]
+            for p in range(1, nBusiness + 1):
+                for j in range(1, max_break_count + 1):
+                    assert (not is_true(sortedHole[p][j])) or is_true(max_break[j]), (
+                        f"(37) violated at p={p}, j={j}"
+                    )
+
+            # (38) not sortedHole[p][j] -> not min[j]
+            for p in range(1, nBusiness + 1):
+                for j in range(1, max_break_count + 1):
+                    assert is_true(sortedHole[p][j]) or (not is_true(min_break[j])), (
+                        f"(38) violated at p={p}, j={j}"
+                    )
+
+            # Unary monotonicity for max and min
+            for j in range(1, max_break_count):
+                assert (not is_true(max_break[j + 1])) or is_true(max_break[j]), (
+                    f"max unary monotonicity violated at j={j}"
+                )
+                assert (not is_true(min_break[j + 1])) or is_true(min_break[j]), (
+                    f"min unary monotonicity violated at j={j}"
+                )
+
+            # (39) not min[j] and max[j] -> dif[j]
+            for j in range(1, max_break_count + 1):
+                antecedent = (not is_true(min_break[j])) and is_true(max_break[j])
+                assert (not antecedent) or is_true(dif[j]), f"(39) violated at j={j}"
+
+            # (40) atMost(d, {dif[j]})
+            dif_count = sum(is_true(dif[j]) for j in range(1, max_break_count + 1))
+            assert dif_count <= fairness_d, (
+                f"(40) violated: dif_count={dif_count}, fairness_d={fairness_d}"
+            )
+            
+            # Check forbidden time slots
+            for p in range(1, nBusiness + 1):
+                for t in forbidden[p]:
+                    assert not is_true(y[p][t]), f"Business {p} has a meeting at forbidden time slot {t}"
+            
+            # Check fixed meetings
+            for m in range(1, nMeetings + 1):
+                if fixed[m] != 0:
+                    t = fixed[m]
+                    assert is_true(x[m][t]), f"Meeting {m} should be scheduled at time slot {t} but is not"
+            
+            # Check precedence constraints
+            for m in range(1, nMeetings + 1):
+                for prec in precedences[m]:
+                    prec_time = None
+                    m_time = None
+                    for t in range(1, nTotalSlots + 1):
+                        if is_true(x[prec][t]):
+                            prec_time = t
+                        if is_true(x[m][t]):
+                            m_time = t
+                    assert prec_time is not None and m_time is not None, f"Precedence constraint between meeting {prec} and {m} is not satisfied (prec_time={prec_time}, m_time={m_time})"
+                    assert prec_time < m_time, f"Meeting {prec} should be scheduled before meeting {m} (prec_time={prec_time}, m_time={m_time})"
+            f.write("All hard constraints are satisfied\n")
         else:
             f.write("NO SOLUTION FOUND\n")
     
     print(f"Output written to: {out_path}")
-
-    # Add checker
-    if assignment:
-        # Create a mapping of variable numbers to their assigned values
-        var_assignment = {abs(var): (var > 0) for var in assignment}
-        print("Checking solution")
-        # Check hard constraints
-        # Each meeting happens exactly once
-        for m in range(1, nMeetings + 1):
-            count = sum(var_assignment.get(x[m][t], False) for t in range(1, nTotalSlots + 1))
-            assert count == 1, f"Meeting {m} does not happen exactly once (count={count})"
-        
-        # No more than nTables meetings at the same time
-        for t in range(1, nTotalSlots + 1):
-            count = sum(var_assignment.get(x[m][t], False) for m in range(1, nMeetings + 1))
-            assert count <= nTables, f"More than {nTables} meetings at time slot {t} (count={count})"
-        
-        # At most one meeting at moment t for the same business
-        for p in range(1, nBusiness + 1):
-            for t in range(1, nTotalSlots + 1):
-                count = sum(var_assignment.get(x[m][t], False) for m in meetingsxBusiness[p])
-                assert count <= 1, f"More than one meeting for business {p} at time slot {t} (count={count})"
-        
-        # Handle time session
-        for m in range(1, nMeetings + 1):
-            if requested[m][2] == 3: # No time restriction
-                continue
-            elif requested[m][2] == 1: # Morning
-                for t in range(nMorningSlots + 1, nTotalSlots + 1):
-                    assert not var_assignment.get(x[m][t], False), f"Meeting {m} should be in the morning but is scheduled at time slot {t}"
-            else: # Afternoon
-                for t in range(1, nMorningSlots + 1):
-                    assert not var_assignment.get(x[m][t], False), f"Meeting {m} should be in the afternoon but is scheduled at time slot {t}"
-        
-        # Check forbidden time slots
-        for p in range(1, nBusiness + 1):
-            for t in forbidden[p]:
-                assert not var_assignment.get(y[p][t], False), f"Business {p} has a meeting at forbidden time slot {t}"
-        
-        # Check fixed meetings
-        for m in range(1, nMeetings + 1):
-            if fixed[m] != 0:
-                t = fixed[m]
-                assert var_assignment.get(x[m][t], False), f"Meeting {m} should be scheduled at time slot {t} but is not"
-        
-        # Check precedence constraints
-        for m in range(1, nMeetings + 1):
-            for prec in precedences[m]:
-                prec_time = None
-                m_time = None
-                for t in range(1, nTotalSlots + 1):
-                    if var_assignment.get(x[prec][t], False):
-                        prec_time = t
-                    if var_assignment.get(x[m][t], False):
-                        m_time = t
-                assert prec_time is not None and m_time is not None, f"Precedence constraint between meeting {prec} and {m} is not satisfied (prec_time={prec_time}, m_time={m_time})"
-                assert prec_time < m_time, f"Meeting {prec} should be scheduled before meeting {m} (prec_time={prec_time}, m_time={m_time})"
-        print("All constraints are satisfied")

@@ -1,0 +1,9 @@
+Input: forum-13crafb.prec25.dzn
+============================================================
+Total Runtime: 1.4121 seconds
+Input parsing: 0.0045 seconds
+Constraint building: 0.4850 seconds
+MaxSAT solving: 0.1661 seconds
+============================================================
+
+NO SOLUTION FOUND
