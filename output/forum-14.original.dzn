@@ -1,9 +1,9 @@
 Input: forum-14.original.dzn
 ============================================================
-Total Runtime: 11.5962 seconds
-Input parsing: 0.0013 seconds
-Constraint building: 1.0667 seconds
-MaxSAT solving: 9.1404 seconds
+Total Runtime: 11.1445 seconds
+Input parsing: 0.0016 seconds
+Constraint building: 1.0892 seconds
+MaxSAT solving: 8.7826 seconds
 ============================================================
 
 Total variables: 321490

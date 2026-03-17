@@ -1,9 +1,9 @@
 Input: tic-14crafc.original.dzn
 ============================================================
-Total Runtime: 0.6710 seconds
-Input parsing: 0.0033 seconds
-Constraint building: 0.2211 seconds
-MaxSAT solving: 0.1508 seconds
+Total Runtime: 0.6323 seconds
+Input parsing: 0.0022 seconds
+Constraint building: 0.2030 seconds
+MaxSAT solving: 0.1389 seconds
 ============================================================
 
 Total variables: 75421
