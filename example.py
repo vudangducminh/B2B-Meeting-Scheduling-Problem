@@ -20,7 +20,7 @@ test_counter = 0
 for input_file in input_files:
     test_counter += 1
     # Already solved these tests
-    if test_counter <= 0 * 8:
+    if test_counter <= 129:
         continue    
     # Get base filename
     base_name = os.path.basename(input_file)
@@ -33,7 +33,7 @@ for input_file in input_files:
     
     in_path = input_file
     out_path = output_file
-    if 'original' not in in_path:
+    if 'original' in in_path:
         continue
     # Reset variables for each input file
     sat_solver = Glucose3()

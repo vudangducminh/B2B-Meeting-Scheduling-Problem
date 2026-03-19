@@ -1,0 +1,12 @@
+Input: forumt-14.fixed040-Forb.dzn
+============================================================
+Total Runtime: 0.4526 seconds
+Input parsing: 0.0155 seconds
+Constraint building: 0.2166 seconds
+MaxSAT solving: 0.0549 seconds
+============================================================
+
+Total variables: 77361
+Total clauses: 166733
+MaxSAT found with cost: N/A
+NO SOLUTION FOUND

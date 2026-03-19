@@ -1,22 +1,25 @@
 Input: forum-13crafc.fixed040-Forb.dzn
 ============================================================
-Total Runtime: 1.4328 seconds
-Input parsing: 0.0041 seconds
-Constraint building: 0.2638 seconds
-MaxSAT solving: 0.5735 seconds
+Total Runtime: 1.5010 seconds
+Input parsing: 0.0035 seconds
+Constraint building: 0.5650 seconds
+MaxSAT solving: 0.2923 seconds
 ============================================================
 
+Total variables: 174986
+Total clauses: 367237
+MaxSAT found with cost: 50
 SCHEDULE:
 Meeting 1 → Time slot 3
 Meeting 2 → Time slot 9
 Meeting 3 → Time slot 2
 Meeting 4 → Time slot 6
-Meeting 5 → Time slot 5
-Meeting 6 → Time slot 7
+Meeting 5 → Time slot 7
+Meeting 6 → Time slot 5
 Meeting 7 → Time slot 8
 Meeting 8 → Time slot 4
 Meeting 9 → Time slot 1
-Meeting 10 → Time slot 19
+Meeting 10 → Time slot 18
 Meeting 11 → Time slot 12
 Meeting 12 → Time slot 11
 Meeting 13 → Time slot 21
@@ -28,7 +31,7 @@ Meeting 18 → Time slot 17
 Meeting 19 → Time slot 4
 Meeting 20 → Time slot 2
 Meeting 21 → Time slot 3
-Meeting 22 → Time slot 7
+Meeting 22 → Time slot 1
 Meeting 23 → Time slot 6
 Meeting 24 → Time slot 5
 Meeting 25 → Time slot 7
@@ -50,7 +53,7 @@ Meeting 40 → Time slot 1
 Meeting 41 → Time slot 12
 Meeting 42 → Time slot 13
 Meeting 43 → Time slot 15
-Meeting 44 → Time slot 18
+Meeting 44 → Time slot 19
 Meeting 45 → Time slot 14
 Meeting 46 → Time slot 13
 Meeting 47 → Time slot 8
@@ -69,11 +72,11 @@ Meeting 59 → Time slot 10
 Meeting 60 → Time slot 5
 Meeting 61 → Time slot 11
 Meeting 62 → Time slot 9
-Meeting 63 → Time slot 2
-Meeting 64 → Time slot 19
+Meeting 63 → Time slot 19
+Meeting 64 → Time slot 18
 Meeting 65 → Time slot 20
 Meeting 66 → Time slot 3
-Meeting 67 → Time slot 1
+Meeting 67 → Time slot 4
 Meeting 68 → Time slot 9
 Meeting 69 → Time slot 5
 Meeting 70 → Time slot 4
@@ -89,12 +92,12 @@ Meeting 79 → Time slot 4
 Meeting 80 → Time slot 1
 Meeting 81 → Time slot 11
 Meeting 82 → Time slot 13
-Meeting 83 → Time slot 3
+Meeting 83 → Time slot 7
 Meeting 84 → Time slot 10
 Meeting 85 → Time slot 12
-Meeting 86 → Time slot 2
+Meeting 86 → Time slot 3
 Meeting 87 → Time slot 9
-Meeting 88 → Time slot 7
+Meeting 88 → Time slot 2
 Meeting 89 → Time slot 8
 Meeting 90 → Time slot 20
 Meeting 91 → Time slot 3
@@ -104,7 +107,7 @@ Meeting 94 → Time slot 5
 Meeting 95 → Time slot 7
 Meeting 96 → Time slot 14
 Meeting 97 → Time slot 6
-Meeting 98 → Time slot 2
+Meeting 98 → Time slot 21
 Meeting 99 → Time slot 12
 Meeting 100 → Time slot 2
 Meeting 101 → Time slot 10
@@ -126,14 +129,14 @@ Meeting 116 → Time slot 4
 Meeting 117 → Time slot 1
 Meeting 118 → Time slot 11
 Meeting 119 → Time slot 10
-Meeting 120 → Time slot 3
-Meeting 121 → Time slot 5
+Meeting 120 → Time slot 5
+Meeting 121 → Time slot 3
 Meeting 122 → Time slot 8
 Meeting 123 → Time slot 10
 Meeting 124 → Time slot 20
-Meeting 125 → Time slot 19
+Meeting 125 → Time slot 18
 Meeting 126 → Time slot 13
-Meeting 127 → Time slot 18
+Meeting 127 → Time slot 19
 Meeting 128 → Time slot 11
 Meeting 129 → Time slot 9
 Meeting 130 → Time slot 7
@@ -156,10 +159,10 @@ Meeting 146 → Time slot 2
 Meeting 147 → Time slot 11
 Meeting 148 → Time slot 12
 Meeting 149 → Time slot 6
-Meeting 150 → Time slot 5
+Meeting 150 → Time slot 7
 Meeting 151 → Time slot 10
 Meeting 152 → Time slot 9
-Meeting 153 → Time slot 3
-Meeting 154 → Time slot 4
-
-SOLUTION VERIFIED: All constraints satisfied
+Meeting 153 → Time slot 11
+Meeting 154 → Time slot 8
+Checking hard constraints...
+All hard constraints are satisfied
