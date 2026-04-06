@@ -20,11 +20,11 @@ test_counter = 0
 for input_file in input_files:
     test_counter += 1
     # Already solved these tests
-    if test_counter <= 129:
+    if test_counter <= 0:
         continue    
     # Get base filename
     base_name = os.path.basename(input_file)
-    output_file = f'./output/{base_name}'
+    output_file = f'./example_output/{base_name}'
     
     print(f"\n{'='*60}")
     print(f"Processing: {base_name}")
@@ -33,7 +33,7 @@ for input_file in input_files:
     
     in_path = input_file
     out_path = output_file
-    if 'original' in in_path:
+    if 'original' not in in_path:
         continue
     # Reset variables for each input file
     sat_solver = Glucose3()
@@ -145,7 +145,7 @@ for input_file in input_files:
                 if content.startswith('{'):
                     first_set = content.lstrip('{').rstrip(',}')
                     numbers = [int(x.strip()) for x in first_set.split(',') if x.strip()]
-                    numbers = numbers[1:]  
+                    numbers = [n for n in numbers if n != 0]  # {0} means empty, keep nonzero
                     forbidden.append(numbers)
             elif line.startswith('{'):
                 should_break = False
@@ -158,7 +158,7 @@ for input_file in input_files:
                     i += 1
                     continue
                 numbers = [int(x.strip()) for x in numbers_str.split(',') if x.strip()]
-                numbers = numbers[1:]  
+                numbers = [n for n in numbers if n != 0]  # {0} means empty, keep nonzero
                 forbidden.append(numbers)
                 if should_break:
                     i += 1
@@ -238,18 +238,52 @@ for input_file in input_files:
     # print("Fixed:", fixed)
     # print("Precedences:", precedences)
 
+    # HARD CONSTRAINTS (19)-(40)
+
     # x[m][t] = 1 if meeting m is scheduled at time slot t, 0 otherwise
     x = [[0 for _ in range(nTotalSlots + 1)] for _ in range(nMeetings + 1)]
 
-    # Assign variable numbers to x[m][t]
+    # y[p][t] = 1 if business p has a meeting at time slot t, 0 otherwise
+    y = [[0 for _ in range(nTotalSlots + 1)] for _ in range(nBusiness + 1)]
+
+    # z[p][t] = 1 if there is at least one meeting from time slot 1 to t for business p, 0 otherwise
+    z = [[0 for _ in range(nTotalSlots + 1)] for _ in range(nBusiness + 1)]
+
+    # h[p][t] = 1 if business p's break gets interrupted at time slot t, 0 otherwise
+    h = [[0 for _ in range(nTotalSlots + 1)] for _ in range(nBusiness + 1)]
+    
     for m in range(1, nMeetings + 1):
         for t in range(1, nTotalSlots + 1):
             if x[m][t] == 0:
                 x[m][t] = variable_size + 1
                 variable_size += 1
 
+    for p in range(1, nBusiness + 1):
+        for t in range(1, nTotalSlots + 1):
+            y[p][t] = variable_size + 1
+            variable_size += 1 
+            
+    for p in range(1, nBusiness + 1):
+        for t in range(1, nTotalSlots + 1):
+            z[p][t] = variable_size + 1
+            variable_size += 1
+            
+    for p in range(1, nBusiness + 1):
+        for t in range(1, nTotalSlots + 1):
+            h[p][t] = variable_size + 1
+            variable_size += 1
 
-    # Each meeting happened exactly once
+    # At most one meeting involving the same participant is scheduled at each time slot (19)
+    for p in range(1, nBusiness + 1):
+        for t in range(1, nTotalSlots + 1):
+            lits = [x[m][t] for m in meetingsxBusiness[p]]
+            if len(lits) > 1:
+                atmost_one = CardEnc.atmost(
+                    lits=lits, bound=1, encoding=EncType.seqcounter, top_id=variable_size
+                )
+                variable_size = max(variable_size, atmost_one.nv)
+                cnf.extend(atmost_one.clauses)
+    # Each meeting happened exactly once (20), (22), (24)
     for m in range(1, nMeetings + 1):
         if requested[m][2] == 3: # No time restriction
             lits = [x[m][t] for t in range(1, nTotalSlots + 1)]
@@ -267,59 +301,78 @@ for input_file in input_files:
             cnf.extend(clauses)
             variable_size = max(variable_size, clauses.nv)
 
-    # No more than nTables meetings at the same time
+    # At most nTables meetings can happen at the same time (21)
     for t in range(1, nTotalSlots + 1):
         lits = [x[m][t] for m in range(1, nMeetings + 1)]
-        clauses = CardEnc.atmost(lits=lits, bound=nTables, encoding=EncType.seqcounter, top_id=variable_size)
-        cnf.extend(clauses)
-        variable_size = max(variable_size, clauses.nv)
-
-    # At most one meeting at moment t for the same business
+        if len(lits) > nTables:
+            atmost_tables = CardEnc.atmost(
+                lits=lits, bound=nTables, encoding=EncType.seqcounter, top_id=variable_size
+            )
+            variable_size = max(variable_size, atmost_tables.nv)
+            cnf.extend(atmost_tables.clauses)
+    # Handle AM/PM restrictions (23), (25)
+    for m in range(1, nMeetings + 1):
+        if requested[m][2] == 1: # Morning
+            for t in range(nMorningSlots + 1, nTotalSlots + 1):
+                cnf.append([-x[m][t]])
+        elif requested[m][2] == 2: # Afternoon
+            for t in range(1, nMorningSlots + 1):
+                cnf.append([-x[m][t]])
+    # Handle fixed meetings (26)
+    for m in range(1, nMeetings + 1):
+        if fixed[m] != 0:
+            t = fixed[m]
+            cnf.append([x[m][t]])
+    
+    # Handle forbidden time slots (27)
+    for p in range(1, nBusiness + 1):
+        for t in forbidden[p]:
+            cnf.append([-y[p][t]])
+    
+    # Handle meeting precedences (28)
+    for m in range(1, nMeetings + 1):
+        for t in range(1, nTotalSlots + 1):
+            for prec in precedences[m]:
+                for tt in range(t, nTotalSlots + 1):
+                    cnf.append([-x[prec][tt], -x[m][t]])
+            
+    # If a meeting is scheduled at time slot t then y[p1][t] and y[p2][t] must be true (29)
+    # => x[m][t] -> y[p1][t] and y[p2][t]
+    for m in range(1, nMeetings + 1):
+        p1 = requested[m][0]
+        p2 = requested[m][1]
+        for t in range(1, nTotalSlots + 1):
+            cnf.append([-x[m][t], y[p1][t]])
+            cnf.append([-x[m][t], y[p2][t]])
+    # If a time slot is used by business p then one of the meetings involving p must be scheduled at that time slot (30)
+    # => y[p][t] -> OR_{m in meetingsxBusiness[p]} x[m][t]
     for p in range(1, nBusiness + 1):
         for t in range(1, nTotalSlots + 1):
             lits = [x[m][t] for m in meetingsxBusiness[p]]
-            clauses = CardEnc.atmost(lits=lits, bound=1, encoding=EncType.seqcounter, top_id=variable_size)
-            cnf.extend(clauses)
-            variable_size = max(variable_size, clauses.nv)
-
-    # Handle time session
-    for m in range(1, nMeetings + 1):
-        if requested[m][2] == 3: # No time restriction
-            continue
-        elif requested[m][2] == 1: # Morning
-            for t in range(nMorningSlots + 1, nTotalSlots + 1):
-                cnf.append([-x[m][t]])
-        else: # Afternoon
-            for t in range(1, nMorningSlots + 1):
-                cnf.append([-x[m][t]])  
-
-    # y[p][t] = 1 if business p has a meeting at time slot t, 0 otherwise
-    y = [[0 for _ in range(nTotalSlots + 1)] for _ in range(nBusiness + 1)]
-
-    # z[p][t] = 1 if there is at least one meeting from time slot 1 to t for business p, 0 otherwise
-    z = [[0 for _ in range(nTotalSlots + 1)] for _ in range(nBusiness + 1)]
-
-    # h[p][t] = 1 if business p's break gets interrupted at time slot t, 0 otherwise
-    h = [[0 for _ in range(nTotalSlots + 1)] for _ in range(nBusiness + 1)]
-
+            cnf.append([-y[p][t]] + lits)
+    # not y[p][1] -> not z[p][1] (31)
+    cnf.append([y[p][1], -z[p][1]])
+    # (not z[p][t - 1] and not y[p][t]) -> not z[p][t] for t in 2..|T| (32)
+    for p in range(1, nBusiness + 1):
+        for t in range(2, nTotalSlots + 1):
+            cnf.append([z[p][t - 1], y[p][t], -z[p][t]])
+    # y[p][t] -> z[p][t] (33)
     for p in range(1, nBusiness + 1):
         for t in range(1, nTotalSlots + 1):
-            y[p][t] = variable_size + 1
-            variable_size += 1 
-    # print(y)
+            cnf.append([-y[p][t], z[p][t]])
+    # z[p][t - 1] -> z[p][t] (34)
     for p in range(1, nBusiness + 1):
-        for t in range(1, nTotalSlots + 1):
-            z[p][t] = variable_size + 1
-            variable_size += 1
-            
+        for t in range(2, nTotalSlots + 1):
+            cnf.append([-z[p][t - 1], z[p][t]])
+    # y[p][t+1] + not h[p][t] + z[p][t] + not y[p][t] <= 3 (35)
     for p in range(1, nBusiness + 1):
-        for t in range(1, nTotalSlots + 1):
-            h[p][t] = variable_size + 1
-            variable_size += 1
+        for t in range(1, nTotalSlots):
+            cnf.append([-y[p][t + 1], h[p][t], -z[p][t], y[p][t]])
+
     # Maximum number of breaks per participant is floor((|T|-1)/2)
     max_break_count = (nTotalSlots - 1) // 2
 
-    # Build sortedHole[p][j], j in 1..floor((|T|-1)/2)
+    # Build sortedHole[p][j], j in 1..floor((|T|-1)/2) (36)
     sortedHole = [[0 for _ in range(max_break_count + 1)] for _ in range(nBusiness + 1)]
 
     for p in range(1, nBusiness + 1):
@@ -379,11 +432,6 @@ for input_file in input_files:
         for j in range(1, max_break_count + 1):
             cnf.append([-min_break[j], sortedHole[p][j]])
 
-    # Keep unary representations monotone: v[j+1] -> v[j]
-    for j in range(1, max_break_count):
-        cnf.append([-max_break[j + 1], max_break[j]])
-        cnf.append([-min_break[j + 1], min_break[j]])
-
     # (39) not min[j] and max[j] -> dif[j]
     for j in range(1, max_break_count + 1):
         cnf.append([min_break[j], -max_break[j], dif[j]])
@@ -400,94 +448,38 @@ for input_file in input_files:
         )
         cnf.extend(fairness_clauses)
         variable_size = max(variable_size, fairness_clauses.nv)
-    
-    # Business p has nMeetingsBusiness[p] meetings
+
+    # Imp1: The number of meetings of a participant p must equal nMeetingsBusiness[p] (43)
     for p in range(1, nBusiness + 1):
         lits = [y[p][t] for t in range(1, nTotalSlots + 1)]
-        # print(f"Business {p} has {nMeetingsBusiness[p]} meetings, lits: {lits}")
         clauses = CardEnc.equals(lits=lits, bound=nMeetingsBusiness[p], encoding=EncType.seqcounter, top_id=variable_size)
         cnf.extend(clauses)
         variable_size = max(variable_size, clauses.nv)
-
-    # x[m][t] <= y[p][t]
-    for p in range(1, nBusiness + 1):
-        for m in meetingsxBusiness[p]:
-            for t in range(1, nTotalSlots + 1):
-                cnf.append([-x[m][t], y[p][t]])
-
-    # y[p][t] <= z[p][t]
-    for p in range(1, nBusiness + 1):
-        for t in range(1, nTotalSlots + 1):
-            cnf.append([-y[p][t], z[p][t]])
-
-    # z[p][t-1] <= z[p][t]
-    for p in range(1, nBusiness + 1):
-        for t in range(2, nTotalSlots + 1):
-            cnf.append([-z[p][t-1], z[p][t]])
-
-    # x[m][t] -> y[p1][t] and y[p2][t]
-    for m in range(1, nMeetings + 1):
-        for t in range(1, nTotalSlots + 1):
-            p1 = requested[m][0]
-            p2 = requested[m][1]
-            cnf.append([-x[m][t], y[p1][t]])
-            cnf.append([-x[m][t], y[p2][t]])
-
-    # y[p][t] -> x[m][t] for some m in meetingsxBusiness[p]
-    for p in range(1, nBusiness + 1):
-        for t in range(1, nTotalSlots + 1):
-            lits = [x[m][t] for m in meetingsxBusiness[p]]
-            cnf.append([-y[p][t]] + lits)
-
-    # y[p][t+1] + not h[p][t] + z[p][t] + not y[p][t] <= 3
-    for p in range(1, nBusiness + 1):
-        for t in range(1, nTotalSlots):
-            cnf.append([-y[p][t+1], h[p][t], -z[p][t], y[p][t]])
-
-    # The number of participants having a meeting in a given time slot is bounded by twice the number of available locations.
+    
+    # Imp2: The number of participants having a meeting in a given time slot is bounded by twice the number of available locations (44)
     for t in range(1, nTotalSlots + 1):
         lits = [y[p][t] for p in range(1, nBusiness + 1)]
         clauses = CardEnc.atmost(lits=lits, bound=2*nTables, encoding=EncType.seqcounter, top_id=variable_size)
         cnf.extend(clauses)
         variable_size = max(variable_size, clauses.nv)
-    # (41) Objective soft clauses: not sortedHole[p][j]
-    # Every true sortedHole contributes +1 to the MaxSAT cost.
-
-    # Handle forbidden time slots
-    for p in range(1, nBusiness + 1):
-        for t in forbidden[p]:
-            cnf.append([-y[p][t]])  # Business p cannot have a meeting at time slot t
-
-    # Handle fixed meetings
-    for m in range(1, nMeetings + 1):
-        if fixed[m] != 0:
-            t = fixed[m]
-            cnf.append([x[m][t]])  # Meeting m must be scheduled at time slot t
-
-    # Handle precedence constraints
-    for m in range(1, nMeetings + 1):
-        for prec in precedences[m]:
-            # Add staircase constraints (meeting prec must be scheduled before meeting m)
-            sfx = [0 for _ in range(nTotalSlots + 1)]
-            sfx[nTotalSlots] = x[prec][nTotalSlots]
-            for t in range(nTotalSlots - 1, 0, -1):
-                sfx[t] = variable_size + 1
-                variable_size += 1
-                cnf.append([-x[prec][t], sfx[t]])  # x[prec][t] => sfx[t]
-                cnf.append([-sfx[t + 1], sfx[t]])  # sfx[t + 1] => sfx[t]
-                cnf.append([x[prec][t], sfx[t + 1], -sfx[t]])  # not x[prec][t] and not sfx[t + 1] => not sfx[t]
-            # x[m][t] + sfx[t + 1] <= 1
-            for t in range(1, nTotalSlots):
-                cnf.append([-x[m][t], -sfx[t + 1]])
-
+    
     # Add hard clauses 
     for clause in cnf.clauses:
         wcnf.append(clause)  # Default weight is top (hard)
 
-    # Add soft clauses from (41)
+    # SOFT CONSTRAINTS:
+
+    # not sortedHole[p][t] with weight 1 for t from 1 to floor((|T|-1)/2) (41)
+    # (Note: This is our objective function)
     for p in range(1, nBusiness + 1):
-        for j in range(1, max_break_count + 1):
-            wcnf.append([-sortedHole[p][j]], weight=1)
+        for t in range(1, max_break_count + 1):
+            wcnf.append([-sortedHole[p][t]], weight=1)
+
+    # (not y[p][t] and h[p][t]) -> not y[p][t + 1] (42)
+    # In words, if you are currently in an idle slot and your schedule has already started, you should not have a meeting in the next slot
+    # for p in range(1, nBusiness + 1):
+    #     for t in range(1, nTotalSlots):
+    #         wcnf.append([y[p][t], -h[p][t], -y[p][t + 1]], weight=1)
 
     constraint_time = time.time()
     print(f"Constraint building completed in {constraint_time - input_time:.4f} seconds")
@@ -535,18 +527,18 @@ for input_file in input_files:
     solve_time = time.time()
     print(f"MaxSAT solving completed in {solve_time - solve_start:.4f} seconds")
 
-    print(assignment)
+    # print(assignment)
 
     end_time = time.time()
     total_time = end_time - start_time
 
     # Output the schedule based on the assignment
 
-    if assignment:
-        for m in range(1, nMeetings + 1):
-            for t in range(1, nTotalSlots + 1):
-                if x[m][t] in assignment:
-                    print(f"Meeting {m} → Time slot {t}")
+    # if assignment:
+    #     for m in range(1, nMeetings + 1):
+    #         for t in range(1, nTotalSlots + 1):
+    #             if x[m][t] in assignment:
+    #                 print(f"Meeting {m} → Time slot {t}")
 
     print(f"\n{'='*60}")
     print(f"TOTAL RUNTIME: {total_time:.4f} seconds ({total_time:.2f}s)")
