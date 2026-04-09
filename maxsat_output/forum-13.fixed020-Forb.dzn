@@ -1,0 +1,37 @@
+Input: forum-13.fixed020-Forb.dzn
+============================================================
+Total Runtime: 2.2334 seconds
+Input parsing: 0.0006 seconds
+Constraint building: 0.9224 seconds
+MaxSAT solving: 0.6364 seconds
+============================================================
+
+Total variables: 181874
+Total clauses: 375645
+MaxSAT found with cost: 20
+SCHEDULE:
+Meeting 1 → Time slot 6
+Meeting 2 → Time slot 2
+Meeting 3 → Time slot 8
+Meeting 4 → Time slot 3
+Meeting 5 → Time slot 9
+Meeting 6 → Time slot 5
+Meeting 7 → Time slot 7
+Meeting 8 → Time slot 4
+Meeting 9 → Time slot 1
+Meeting 10 → Time slot 14
+Meeting 11 → Time slot 12
+Meeting 12 → Time slot 9
+Meeting 13 → Time slot 14
+Meeting 14 → Time slot 8
+Meeting 15 → Time slot 13
+Meeting 16 → Time slot 11
+Meeting 17 → Time slot 10
+Meeting 18 → Time slot 7
+Meeting 19 → Time slot 4
+Meeting 20 → Time slot 2
+Meeting 21 → Time slot 3
+Meeting 22 → Time slot 1
+Meeting 23 → Time slot 6
+Meeting 24 → Time slot 5
+Meeting 25 → Time slot 7

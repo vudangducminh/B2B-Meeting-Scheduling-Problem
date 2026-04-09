@@ -20,7 +20,7 @@ test_counter = 0
 for input_file in input_files:
     test_counter += 1
     # Already solved these tests
-    if test_counter <= 0:
+    if test_counter <= 130:
         continue    
     # Get base filename
     base_name = os.path.basename(input_file)
@@ -432,6 +432,11 @@ for input_file in input_files:
         for j in range(1, max_break_count + 1):
             cnf.append([-min_break[j], sortedHole[p][j]])
 
+    # Monotonicity for max and min
+    for j in range(1, max_break_count):
+        cnf.append([-max_break[j + 1], max_break[j]])
+        cnf.append([-min_break[j + 1], min_break[j]])
+        
     # (39) not min[j] and max[j] -> dif[j]
     for j in range(1, max_break_count + 1):
         cnf.append([min_break[j], -max_break[j], dif[j]])
@@ -631,6 +636,18 @@ for input_file in input_files:
                     assert (not antecedent) or is_true(h[p][t]), (
                         f"h[{p}][{t}] should be true by break implication"
                     )
+            
+            # Unary monotonicity for max and min
+            # for j in range(1, max_break_count):
+                # print(is_true(max_break[j]))
+            for j in range(1, max_break_count):
+                assert (not is_true(max_break[j + 1])) or is_true(max_break[j]), (
+                    f"max unary monotonicity violated at j={j}"
+                )
+                assert (not is_true(min_break[j + 1])) or is_true(min_break[j]), (
+                    f"min unary monotonicity violated at j={j}"
+                )
+
 
             # Participant load bound per slot
             for t in range(1, nTotalSlots + 1):
@@ -662,15 +679,6 @@ for input_file in input_files:
                     assert is_true(sortedHole[p][j]) or (not is_true(min_break[j])), (
                         f"(38) violated at p={p}, j={j}"
                     )
-
-            # Unary monotonicity for max and min
-            for j in range(1, max_break_count):
-                assert (not is_true(max_break[j + 1])) or is_true(max_break[j]), (
-                    f"max unary monotonicity violated at j={j}"
-                )
-                assert (not is_true(min_break[j + 1])) or is_true(min_break[j]), (
-                    f"min unary monotonicity violated at j={j}"
-                )
 
             # (39) not min[j] and max[j] -> dif[j]
             for j in range(1, max_break_count + 1):
