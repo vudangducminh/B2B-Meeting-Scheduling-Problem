@@ -2,6 +2,7 @@
 import sys
 from pysat.pb import *
 from pysat.formula import CNF, WCNF
+from pysat.solvers import Glucose4
 from pysat.card import CardEnc, EncType, ITotalizer
 from pysat.examples.rc2 import RC2
 from math import inf
