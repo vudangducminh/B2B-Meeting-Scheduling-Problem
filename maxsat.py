@@ -1,9 +1,7 @@
 
 import sys
-import signal
 from pysat.pb import *
 from pysat.formula import CNF, WCNF
-from pysat.solvers import Glucose3
 from pysat.card import CardEnc, EncType
 from pysat.examples.rc2 import RC2
 from math import inf
@@ -37,7 +35,6 @@ for input_file in input_files:
     if 'original' not in in_path:
         continue
     # Reset variables for each input file
-    sat_solver = Glucose3()
     cnf = CNF()
     wcnf = WCNF()
     variable_size = 0
@@ -360,8 +357,10 @@ for input_file in input_files:
         for t in range(1, nTotalSlots + 1):
             lits = [x[m][t] for m in meetingsxBusiness[p]]
             cnf.append([-y[p][t]] + lits)
+
     # not y[p][1] -> not z[p][1] (31)
-    cnf.append([y[p][1], -z[p][1]])
+    for p in range(1, nBusiness + 1):
+        cnf.append([y[p][1], -z[p][1]])
     # (not z[p][t - 1] and not y[p][t]) -> not z[p][t] for t in 2..|T| (32)
     for p in range(1, nBusiness + 1):
         for t in range(2, nTotalSlots + 1):
