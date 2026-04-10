@@ -1,10 +1,9 @@
+
 import sys
 from pysat.pb import *
 from pysat.formula import CNF, WCNF
 from pysat.card import CardEnc, EncType
-from pysat.examples.rc2 import RC2
 from math import inf
-import signal
 import subprocess
 import time
 import os
@@ -18,11 +17,11 @@ test_counter = 0
 for input_file in input_files:
     test_counter += 1
     # Already solved these tests
-    if test_counter <= 0:
+    if test_counter <= 130:
         continue    
     # Get base filename
     base_name = os.path.basename(input_file)
-    output_file = f'./example_output/{base_name}'
+    output_file = f'./maxsat_output/{base_name}'
     
     print(f"\n{'='*60}")
     print(f"Processing: {base_name}")
@@ -347,6 +346,7 @@ for input_file in input_files:
         for t in range(1, nTotalSlots + 1):
             lits = [x[m][t] for m in meetingsxBusiness[p]]
             cnf.append([-y[p][t]] + lits)
+
     # not y[p][1] -> not z[p][1] (31)
     for p in range(1, nBusiness + 1):
         cnf.append([y[p][1], -z[p][1]])
@@ -366,6 +366,9 @@ for input_file in input_files:
     for p in range(1, nBusiness + 1):
         for t in range(1, nTotalSlots):
             cnf.append([-y[p][t + 1], h[p][t], -z[p][t], y[p][t]])
+            cnf.append([-h[p][t], -y[p][t]])
+            cnf.append([-h[p][t], z[p][t]])
+            cnf.append([-h[p][t], y[p][t + 1]])
 
     # Maximum number of breaks per participant is floor((|T|-1)/2)
     max_break_count = (nTotalSlots - 1) // 2
@@ -434,7 +437,7 @@ for input_file in input_files:
     for j in range(1, max_break_count):
         cnf.append([-max_break[j + 1], max_break[j]])
         cnf.append([-min_break[j + 1], min_break[j]])
-        
+
     # (39) not min[j] and max[j] -> dif[j]
     for j in range(1, max_break_count + 1):
         cnf.append([min_break[j], -max_break[j], dif[j]])
@@ -478,47 +481,50 @@ for input_file in input_files:
         for t in range(1, max_break_count + 1):
             wcnf.append([-sortedHole[p][t]], weight=1)
 
-    # (not y[p][t] and h[p][t]) -> not y[p][t + 1] (42)
+    # (not y[p][t] and z[p][t]) -> not y[p][t + 1] (42)
     # In words, if you are currently in an idle slot and your schedule has already started, you should not have a meeting in the next slot
     # for p in range(1, nBusiness + 1):
     #     for t in range(1, nTotalSlots):
-    #         wcnf.append([y[p][t], -h[p][t], -y[p][t + 1]], weight=1)
+    #         wcnf.append([y[p][t], -z[p][t], -y[p][t + 1]], weight=1)
 
     constraint_time = time.time()
     print(f"Constraint building completed in {constraint_time - input_time:.4f} seconds")
     print(f"Total variables: {variable_size}")
     print(f"Total clauses: {len(cnf.clauses)}")
-    class TimeoutError(Exception):
-        pass
-
-    def timeout_handler(signum, frame):
-        raise TimeoutError("Solver timeout after 1 hour")
 
     def solve_maxsat():
-        # Set timeout to 1 hour (3600 seconds)
-        signal.signal(signal.SIGALRM, timeout_handler)
-        signal.alarm(3600)
-        
+        UWRMAXSAT_BIN = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'uwrmaxsat', 'build', 'release', 'bin', 'uwrmaxsat')
+        WCNF_FILE = 'maxHS.wcnf'
+        TIMEOUT = 3600  # 1 hour
+
         try:
-            # Create RC2 solver with the WCNF formula
-            solver = RC2(wcnf)
-            
-            # Compute the optimal solution
-            model = solver.compute()
-            
-            # Get the cost (number of unsatisfied soft clauses)
-            if model:
-                solution_cost = solver.cost
+            result = subprocess.run(
+                [UWRMAXSAT_BIN, '-m', WCNF_FILE],
+                capture_output=True, text=True, timeout=TIMEOUT
+            )
+            output = result.stdout
+
+            model = []
+            solution_cost = None
+            status = None
+
+            for line in output.splitlines():
+                if line.startswith('s '):
+                    status = line[2:].strip()
+                elif line.startswith('o '):
+                    solution_cost = int(line[2:].strip())
+                elif line.startswith('v '):
+                    model.extend(int(lit) for lit in line[2:].split())
+
+            if status == 'OPTIMUM FOUND' and model:
                 print(f"MaxSAT solution found with cost: {solution_cost}")
+                return model, solution_cost
             else:
-                solution_cost = None
-            
-            # Cancel the alarm if solver finishes before timeout
-            signal.alarm(0)
-            return model, solution_cost
-        except TimeoutError as e:
-            signal.alarm(0)
-            print(f"TIMEOUT: {str(e)}")
+                print(f"UWrMaxSat status: {status}")
+                return None, None
+
+        except subprocess.TimeoutExpired:
+            print(f"TIMEOUT: Solver timeout after {TIMEOUT} seconds")
             return None, None
 
     # Write the WCNF to a file
@@ -527,6 +533,13 @@ for input_file in input_files:
     # Solve
     solve_start = time.time()
     assignment, cost = solve_maxsat()
+    # Calculate cost
+    cost = 0
+    if assignment:
+        for p in range(1, nBusiness + 1):
+            for t in range(1, max_break_count + 1):
+                if sortedHole[p][t] in assignment:
+                    cost += 1
     solve_time = time.time()
     print(f"MaxSAT solving completed in {solve_time - solve_start:.4f} seconds")
 
@@ -634,18 +647,6 @@ for input_file in input_files:
                     assert (not antecedent) or is_true(h[p][t]), (
                         f"h[{p}][{t}] should be true by break implication"
                     )
-            
-            # Unary monotonicity for max and min
-            # for j in range(1, max_break_count):
-                # print(is_true(max_break[j]))
-            for j in range(1, max_break_count):
-                assert (not is_true(max_break[j + 1])) or is_true(max_break[j]), (
-                    f"max unary monotonicity violated at j={j}"
-                )
-                assert (not is_true(min_break[j + 1])) or is_true(min_break[j]), (
-                    f"min unary monotonicity violated at j={j}"
-                )
-
 
             # Participant load bound per slot
             for t in range(1, nTotalSlots + 1):
@@ -677,6 +678,15 @@ for input_file in input_files:
                     assert is_true(sortedHole[p][j]) or (not is_true(min_break[j])), (
                         f"(38) violated at p={p}, j={j}"
                     )
+
+            # Unary monotonicity for max and min
+            for j in range(1, max_break_count):
+                assert (not is_true(max_break[j + 1])) or is_true(max_break[j]), (
+                    f"max unary monotonicity violated at j={j}"
+                )
+                assert (not is_true(min_break[j + 1])) or is_true(min_break[j]), (
+                    f"min unary monotonicity violated at j={j}"
+                )
 
             # (39) not min[j] and max[j] -> dif[j]
             for j in range(1, max_break_count + 1):

@@ -1,0 +1,1432 @@
+\documentclass[10pt]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{amsmath}
+\usepackage{amsfonts}
+\usepackage{amssymb}
+\usepackage[version=4]{mhchem}
+\usepackage{stmaryrd}
+\usepackage{hyperref}
+\hypersetup{colorlinks=true, linkcolor=blue, filecolor=magenta, urlcolor=cyan,}
+\urlstyle{same}
+\usepackage{graphicx}
+\usepackage[export]{adjustbox}
+\graphicspath{ {./images/} }
+\usepackage{caption}
+\usepackage{underscore}
+\usepackage{bbold}
+
+\title{Constraint Solving Approaches to the Business-to-Business Meeting Scheduling Problem }
+
+\author{Miquel Bofill\\
+IMAE department, University of Girona, Girona, Spain\\
+MBOFILL@IMAE.UDG.EDU\\
+JORDI.COLL@LIS-LAB.FR\\
+Aix Marseille Univ, Université de Toulon, CNRS, LIS, Marseille, France\\
+\textbackslash section*\{Marc Garcia\}\\
+IMAE department, University of Girona, Girona, Spain\\
+\textbackslash section*\{Jesús Giráldez-Cru\}\\
+DaSCI institute, DECSAI, University of Granada, Granada, Spain\\
+\textbackslash section*\{Gilles Pesant\}\\
+Polytechnique Montréal, Montréal, Canada\\
+\textbackslash section*\{Josep Suy\}\\
+Mateu Villaret\\
+IMAE department, University of Girona, Girona, Spain\\
+GILLES.PESANT@POLYMTL.CA\\
+SUY@IMAE.UDG.EDU\\
+VILLARET@IMAE.UDG.EDU}
+\date{}
+
+
+\begin{document}
+\maketitle
+\captionsetup{singlelinecheck=false}
+
+
+\begin{abstract}
+The Business-to-Business Meeting Scheduling problem consists of scheduling a set of meetings between given pairs of participants to an event, while taking into account participants' availability and accommodation capacity. A crucial aspect of this problem is that breaks in participants' schedules should be avoided as much as possible. It constitutes a challenging combinatorial problem that needs to be solved for many real world brokerage events.\\
+In this paper we present a comparative study of Constraint Programming (CP), MixedInteger Programming (MIP) and Maximum Satisfiability (MaxSAT) approaches to this problem. The CP approach relies on using global constraints and has been implemented in MiniZinc to be able to compare CP, Lazy Clause Generation and MIP as solving technologies in this setting. We also present a pure MIP encoding. Finally, an alternative viewpoint is considered under MaxSAT, showing best performance when considering some implied constraints. Experiments conducted on real world instances, as well as on crafted ones, show that the MaxSAT approach is the one with the best performance for this problem, exhibiting better solving times, sometimes even orders of magnitude smaller than CP and MIP.
+\end{abstract}
+
+\section*{1. Introduction}
+Business-to-business (B2B) events involve holding meetings between attendees with common interests or needs. These events typically occur in forums, conferences, and gatherings as an opportunity for the attendees to find investors, sell or buy products, share ideas and projects, etc. Obtaining a feasible schedule for the desired meetings according to time availability of participants and accommodation capacity is a hard combinatorial problem.
+
+It is frequent that the participants of such events answer some questions about their interests and expertise, in the event registration phase. This information is made public to the participants, who may ask for pairwise meetings with other participants, with a certain priority. They also indicate their time availability for the meetings (notice that, in addition to the meetings, there are usually other activities running in parallel that participants may need to attend and therefore they should reserve some time slots). Moreover, the participants may ask for meetings in particular session, e.g. morning or afternoon sessions. Then, according to this information (participants' availability and priorities for the desired meetings) a matchmaker proposes a set of matches (meetings) to be scheduled. Scheduling these meetings is a tough task since the timetable must satisfy several hard constraints, like avoiding meeting collisions, as well as some soft constraints, like avoiding unnecessary breaks between meetings of the same participant. Experience shows that breaks may lead some participants to leave the event, dismissing later scheduled meetings. Therefore, it is desirable to avoid unnecessary breaks in the particular schedules of each participant. At the same time, it is desirable to be fair by avoiding big differences in the number of breaks of participants.
+
+Several works have dealt with this problem. Gebser, Glase, Sabuncu, and Schaub (2013) describe an answer set programming system, being used by the company piranha womex $A G$ for computing matchmaking schedules in several fairs. This system has some limitations. For instance, it does not consider forbidden time slots but unpreferred ones, and it allows meeting collisions under the assumption that the companies can send multiple participants. Model-and-solve approaches on a more complete formulation have been developed in recent works. Several CP, MIP and SAT based encodings have been studied by Bofill, Espasa, Garcia, Palahí, Suy, and Villaret (2014), by Pesant, Rix, and Rousseau (2015) and by Bofill, Garcia, Suy, and Villaret (2015).
+
+In this work we revisit, extend and improve the state-of-the-art approaches for the Business-to-Business Meeting Scheduling problem introduced by Pesant et al. (2015) and by Bofill et al. (2015), and compare their performance on real world instances, as well as on crafted instances. In particular:
+
+\begin{itemize}
+  \item We consider some extensions of the problem: including time restrictions for meetings, meeting precedences, and prefixed meetings. Using these extensions, we contribute 180 new crafted instances. ${ }^{1}$
+  \item We re-implement the Constraint Programming model by Pesant et al. (2015) using MiniZinc (Nethercote, Stuckey, Becket, Brand, Duck, \& Tack, 2007), allowing us to compare the performance of different solving technologies using the same model.
+  \item We provide an alternative way of identifying the breaks in participants' schedules.
+  \item We provide further details of the MaxSAT encoding by Bofill et al. (2015).
+  \item We improve the MaxSAT and MIP models by taking advantage of implied constraints occurring in the problem.
+\end{itemize}
+
+\begin{enumerate}
+  \item The instances are available at \href{http://imae.udg.edu/recerca/lai}{http://imae.udg.edu/recerca/lai}.
+\end{enumerate}
+
+\begin{itemize}
+  \item We adapt the Constraint Programming, MaxSAT and MIP models to deal with the extensions of the problem.
+\end{itemize}
+
+The rest of the paper is structured as follows. In Section 2 we define the problem at hand. In Sections 3, 4 and 5 we present the different models considered, namely Constraint Programming, MaxSAT and MIP models respectively. In Section 6 we provide a comparison of the presented models. Section 7 is devoted to experimental evaluation. A summary and conclusions are given in Section 8. Finally, we provide a detailed MiniZinc model in an appendix section.
+
+\section*{2. The Business-to-Business Meeting Scheduling Problem}
+In this section we define the problem at hand, as well as some extensions of it.\\
+Definition 2.1. Let $P$ be a set of participants to an event, $T$ a set of available time slots and $L$ a set of available locations for holding meetings. Let $M$ be a set of unordered pairs of participants in $P$, representing the meetings to be scheduled.
+
+A schedule $S$ is a total mapping from $M$ to $T \times L$. Given a meeting $m$, by time $(S, m)$ and $\operatorname{loc}(S, m)$ we refer to the time slot and the location assigned to $m$, respectively, according to $S$. In other words, given a meeting $m$ with $S(m)=(t, l)$ we have time $(S, m)=t$ and $l o c(S, m)=l$.
+
+We define a feasible business-to-business (B2B) meeting schedule $S$ as a total mapping from $M$ to $T \times L$ such that the following constraints are satisfied:
+
+\begin{itemize}
+  \item Each participant has at most one meeting scheduled in each time slot.
+\end{itemize}
+
+
+\begin{equation*}
+\operatorname{time}\left(S, m_{1}\right)=\operatorname{time}\left(S, m_{2}\right) \Longrightarrow m_{1} \cap m_{2}=\emptyset \quad m_{1}, m_{2} \in M: m_{1} \neq m_{2} \tag{1}
+\end{equation*}
+
+
+\begin{itemize}
+  \item At most one meeting is scheduled in a given time slot and location.
+\end{itemize}
+
+
+\begin{align*}
+& \operatorname{time}\left(S, m_{1}\right)=\operatorname{time}\left(S, m_{2}\right) \Longrightarrow \operatorname{loc}\left(S, m_{1}\right) \neq \operatorname{loc}\left(S, m_{2}\right) \\
+& m_{1}, m_{2} \in M: m_{1} \neq m_{2} \tag{2}
+\end{align*}
+
+
+The B 2 B meeting scheduling problem (B2BSP) is the problem of finding a feasible B2B meeting schedule.
+
+The B2BSP is NP-complete. It is clearly in NP, and its NP-hardness can be proved by reduction from the edge coloring problem (deciding if, given a graph $G$, all its edges can be colored so that no two incident edges have the same color, using $k$ colors or the fewest number of colors, which amounts to the maximal degree of the graph).
+
+Theorem 2.1. The B\&BSP is NP-hard.\\
+Proof. (sketch). The edge coloring problem can be reduced to the B2BSP as follows. Each vertex of the graph represents a participant to the B2B event, while each edge corresponds to a meeting between the two participants at the vertices. We take $k$ as the number of time slots. We can take as many locations as needed.
+
+Alternatively, NP-hardness of the B2BSP can be shown by a reduction from the restricted timetable problem described by Even, Itai, and Shamir (1975).
+
+Typically, we are interested in schedules which minimize the number of breaks. By a break we refer to a group of idle time slots between a meeting of a participant and her next meeting. Before formally defining this optimization version of the B2BSP, we need to introduce some auxiliary definitions. Without loss of generality we assume that time slots are consecutively numbered, starting at one.
+
+Definition 2.2. Given a $B 2 B$ meeting schedule $S$ for a set of meetings $M$, and a participant $p \in P$, we define $L_{S}(p)$ as the list of meetings in $M$ involving $p$, ordered by its scheduled time according to $S$ :
+
+$$
+\begin{aligned}
+& L_{S}(p)=\left[m_{1}, \ldots, m_{k}\right] \text { such that } \\
+& \qquad \forall i \in 1 . . k: p \in m_{i} \\
+& \qquad \forall m \in M: p \in m \Rightarrow \exists!i \in 1 . . k: m_{i}=m \\
+& \forall i \in 1 . . k-1: \operatorname{time}\left(S, m_{i}\right)<\operatorname{time}\left(S, m_{i+1}\right)
+\end{aligned}
+$$
+
+By $L_{S}(p)[i]$ we refer to the $i$-th element of $L_{S}(p)$, i.e., $m_{i}$, and $\exists$ ! stands for exists unique.\\
+Definition 2.3. We define $H_{S}(p)$ as the number of breaks (or holes) of participant $p$ for a given schedule $S$ as follows:
+
+$$
+H_{S}(p)=\left|\left\{L_{S}(p)[i]\left|i \in 1 . .\left|L_{S}(p)\right|-1, \operatorname{time}\left(S, L_{S}(p)[i]\right)+1 \neq \operatorname{time}\left(S, L_{S}(p)[i+1]\right)\right\} \mid\right.\right.
+$$
+
+Definition 2.4. We define the B 2 B Scheduling Optimization Problem (B2BSOP) as the problem of finding a feasible B2B meeting schedule $S$, where the total number of breaks of the participants is minimal, i.e., such that it minimizes
+
+
+\begin{equation*}
+\sum_{p \in P} H_{S}(p) \tag{3}
+\end{equation*}
+
+
+Depending on participants' requirements, more constraints can be imposed on the meetings:
+
+\begin{itemize}
+  \item Fixed sessions. As an additional constraint, we consider the case where the B2B meetings can be structured in sessions, each one consisting of a set of consecutive time slots. Then, it may be the case that some meetings must necessarily be held in a particular session. Let's then consider that the set of time slots $T$ is divided into disjoint sets $T_{1}, \ldots, T_{s}$ and, moreover, we have a mapping session : $M \rightarrow\{0,1, \ldots, s\}$, where $\operatorname{session}(m)=i \in\{1 . . s\}$ means that meeting $m$ must take place at some time slot of session $T_{i}$, and $\operatorname{session}(m)=0$ means that it does not matter in which session meeting $m$ is held. Then the schedule should also satisfy the following requirement:
+\end{itemize}
+
+$$
+(\operatorname{session}(m)=i \wedge i>0) \Longrightarrow \operatorname{time}(S, m) \in T_{i} \quad m \in M
+$$
+
+\begin{itemize}
+  \item Fixed Meetings. A meeting can be requested to be held in a specific time slot. This would mean to have a mapping fixed : $M \rightarrow\{0\} \cup T$, with fixed $(m)=i \in T$ meaning\\
+that meeting $m$ must take place at time slot $i$, and $f i x e d(m)=0$ meaning that it does not matter in which time slot meeting $m$ takes place. Then the schedule should also satisfy the following requirement:
+\end{itemize}
+
+$$
+\text { fixed }(m)>0 \Longrightarrow \operatorname{time}(S, m)=\text { fixed }(m) \quad m \in M
+$$
+
+\begin{itemize}
+  \item Forbidden time slots. A participant could request not to have any meeting in some time slots. Then, we would have a mapping forb : $P \rightarrow 2^{T}$, with forb $(p)$ denoting the set of forbidden time slots for participant $p$. Then the schedule should also satisfy the following requirement:
+\end{itemize}
+
+$$
+p \in m \Longrightarrow \operatorname{time}(S, m) \notin \operatorname{forb}(p) \quad p \in P, m \in M
+$$
+
+\begin{itemize}
+  \item Meeting precedences. Sometimes it may be required that some meetings are scheduled before others. Therefore, we would have a mapping prec : $M \rightarrow 2^{M}$, with prec(m) denoting the set of meetings that must be held before $m$. Then the schedule should satisfy the following requirement:
+\end{itemize}
+
+$$
+\operatorname{time}\left(S, m^{\prime}\right)<\operatorname{time}(S, m) \quad m \in M, m^{\prime} \in \operatorname{prec}(m)
+$$
+
+Sometimes optimality with respect to the total number of breaks may not be enough, and a certain notion of fairness may be required:
+
+\begin{itemize}
+  \item Fairness. We could consider, as a sort of meta-constraint, a fairness requirement on the number of breaks among participants. In particular, we could ask for feasible schedules $S$ such that the difference between the number of breaks of every two distinct participants is bounded by a certain quantity $d$.
+\end{itemize}
+
+$$
+\left|H_{S}\left(p_{1}\right)-H_{S}\left(p_{2}\right)\right| \leq d \quad p_{1}, p_{2} \in P: p_{1} \neq p_{2}
+$$
+
+Note that feasibility and optimality can be guaranteed without knowing the exact location where each meeting will be held, but bounding the number of meetings to be held in the same time slot to the number of available locations. Therefore, in this work, we will not consider the location assigned to each meeting, but the total number of meetings per time slot.
+
+Without loss of generality we restrict the models and experiments to two distinct session types, namely $T_{A M}$ and $T_{P M}$, corresponding to morning and afternoon time slots, respectively, and such that $T=T_{A M} \uplus T_{P M}$.
+
+For the sake of readability we define $M_{p}$ to denote the set of meetings of participant $p$, and $M_{A M}$ (resp. $M_{P M}$ ) to denote the set of meetings to be held in the morning (resp. afternoon) sessions.
+
+\section*{3. Constraint Programming Models}
+A natural CP model for the B2BSOP defines variables
+
+$$
+s_{p t} \quad p \in P, t \in T
+$$
+
+with domain in $M_{p} \cup\{0\}$ to represent which meeting participant $p$ will hold at time $t$, value 0 corresponding to no meeting. Pesant et al. (2015) shown that the $s_{p t}$ viewpoint was much better suited to CP than the alternative by Bofill et al. (2014). Therefore, in this section we consider this viewpoint, which is moreover very simple and essentially requires two kinds of global constraints:
+
+\begin{itemize}
+  \item The Global Cardinality Constraint, that counts the number of occurrences of values in a sequence. This constraint will deal with the feasibility of the problem by ensuring that all meetings are scheduled, and that the available number of locations is not surpassed by the number of meetings scheduled at each time slot. Notice that the viewpoint itself ensures that a participant will have no two meetings scheduled at the same time.
+  \item The Cost Regular Constraint, that forces a sequence of variables to be a word of a regular language and can assign costs to certain patterns. This constraint will be used to deal with the optimization of the schedule, by counting the number of breaks of the participants.
+\end{itemize}
+
+\subsection*{3.1 Feasibility}
+Here is our (abstract) model for the feasibility subproblem:
+
+\[
+\begin{array}{rr}
+\operatorname{gcc}\left(\left\{s_{p \star}\right\},\langle 0\rangle++\operatorname{list}\left(M_{p}\right),\left\langle\left\{|T|-\left|M_{p}\right|\right\},\{1\}, \ldots,\{1\}\right\rangle\right) & p \in P \\
+\operatorname{gcc}\left(\left\{s_{\star t}\right\},\langle 0\rangle++\operatorname{list}(M),\langle\{|P|-2|L|, \ldots,|P|\},\{0,2\}, \ldots,\{0,2\}\rangle\right) & t \in T \\
+s_{p t} \in M_{p} \cup\{0\} & p \in P \\
+& t \in T \tag{6}
+\end{array}
+\]
+
+where we use $\operatorname{list}(X)$ to denote a permutation of the elements of set $X$, and we use ++ to denote list concatenation.
+
+Constraints (4) use a global cardinality constraint (Régin, 1996) on the decision variables of a given participant to ensure that each of her meetings appears once (the first component of the vector of occurrences, corresponding to value 0 , indicates the number of time slots without a meeting). Constraints (5) use a global cardinality constraint on the decision variables of a given time slot to express two things: the first component says that the number of participants not having a meeting must be at least $|P|-2|L|$ because we can hold at most $|L|$ meetings and each meeting appears twice (once for each participant); the other components, for each meeting, say that the two participants to a given meeting must attend it in the same time slot and therefore a meeting occurs twice or not at all.
+
+\subsection*{3.2 Optimization}
+We now model the optimization component of our problem by modelling break patterns. We define a variable $b_{p}$ for each participant $p$ giving the number of breaks in her schedule and seek to minimize the total number of breaks in the schedule. In order to link the $b_{p}$ variables to the main $s_{p t}$ variables we need to consider the sequence of values taken by the decision variables of a participant: each subsequence of zeros in between scheduled meetings for $p$ corresponds to a break and $b_{p}$ represents how many such breaks there are in the sequence. For example, patterns $0 \star \star 00 \star 00$ and $\star 000 \star 0 \star 0$ for eight time slots and three meetings feature respectively one and two breaks.
+
+To express this globally we could enumerate each possible pattern, associate its number of breaks and use a table constraint. For given $T, M_{p}$, and maximum number of breaks $b^{\prime}$ this makes
+
+$$
+\sum_{i=0}^{b^{\prime}}\binom{\left|M_{p}\right|-1}{i} \cdot\binom{|T|-\left|M_{p}\right|+1}{i+1}
+$$
+
+patterns. Even if we restrict ourselves to at most $b^{\prime}=2$ breaks, the number of patterns is in $\Theta\left(\left|M_{p}\right|^{2}\left(|T|-\left|M_{p}\right|\right)^{3}\right)$ which, when the number of meetings is about half of the number of time slots, simplifies to $\Theta\left(\left|M_{p}\right|^{5}\right)$. Considering that the largest instance has 22 time slots with some participants holding 11 meetings, we could end up generating hundreds of thousands of patterns.
+
+\begin{figure}[h]
+\begin{center}
+  \includegraphics[alt={},max width=\textwidth]{2fab4af5-dba8-4b44-b6d5-17faaae3634b-07_223_599_1344_766}
+\captionsetup{labelformat=empty}
+\caption{Figure 1: Automaton $\mathcal{A}_{1}$ for a participant with three meetings. Arc label " $m$ " stands for any meeting and label " 0 " for no meeting. Only the red dashed arcs carry a cost, of one unit, to mark the start of a break.}
+\end{center}
+\end{figure}
+
+A much more compact way to express this uses an automaton on $2\left|M_{p}\right|$ states that recognizes precisely these patterns. Figure 1 presents such an automaton, referred to as $\mathcal{A}_{1}$, for a participant with three meetings. Observe however that by concentrating on patterns without distinguishing between meetings we may miss some inferences. For example any assignment from the sequence of domains $\left\langle\left\{m_{1}, m_{2}, m_{3}, 0\right\},\left\{m_{1}, m_{2}, m_{3}, 0\right\},\left\{m_{4}, 0\right\}\right.$, $\left.\left\{m_{4}, 0\right\},\left\{m_{1}, m_{2}, m_{3}, 0\right\},\left\{m_{1}, m_{2}, m_{3}, 0\right\}\right\rangle$ corresponding to four meetings being scheduled over six time slots (some of them forbidden for some meetings) will necessarily introduce at least one break but such an automaton will not recognize it. To catch this, a more finegrain automaton distinguishing between meetings will have $2^{\left|M_{p}\right|+1}-2$ states essentially representing all subsets of meetings. Figure 2 presents such an automaton, referred to as $\mathcal{A}_{2}$, again for a participant with three meetings. Because this automaton has significantly more states, we will refrain from using it.
+
+\begin{figure}[h]
+\begin{center}
+  \includegraphics[alt={},max width=\textwidth]{2fab4af5-dba8-4b44-b6d5-17faaae3634b-08_495_847_309_640}
+\captionsetup{labelformat=empty}
+\caption{Figure 2: Automaton $\mathcal{A}_{2}$ for a participant with three meetings. Arc label " $m_{i}$ " stands for that particular meeting and label " 0 " for no meeting. Only the red dashed arcs carry a cost, of one unit, to mark the start of a break.}
+\end{center}
+\end{figure}
+
+Notice that, in fact, both automata are only accepting sequences with the exact number of meetings of each participant. However, Constraints (4) are already enforcing that all meetings of each participant are scheduled exactly once. Therefore, we can use an even more compact automaton that is only taking care of the break patterns. Figure 3 presents such automaton that we refer to as $\mathcal{A}_{0}$. This automaton has only three states and does not care about the number of meetings occurring in the sequence, so it will be the same for each participant.
+
+When using automaton $\mathcal{A}_{1}$, Constraints (4) are still needed because the automaton is only counting the number of meetings of each participant but does not control at all if there is any repetition. Conversely, when using automaton $\mathcal{A}_{2}$ we could save the use of Constraints (4) because this automaton only accepts participants' schedules with all their meetings occurring exactly once.
+
+\begin{figure}[h]
+\begin{center}
+  \includegraphics[alt={},max width=\textwidth]{2fab4af5-dba8-4b44-b6d5-17faaae3634b-08_225_390_1950_867}
+\captionsetup{labelformat=empty}
+\caption{Figure 3: Automaton $\mathcal{A}_{0}$ for a participant with any number of meetings. Arc label " $m$ " stands for any meeting and label " 0 " for no meeting. Only the red dashed arc carries a cost, of one unit, to mark the end of a break.}
+\end{center}
+\end{figure}
+
+Then, the objective function and related constraints are defined as follows:
+
+\[
+\begin{array}{rl}
+\min \sum_{p \in P} b_{p} & \text { s.t. } \\
+b_{p}=0 & p \in P:\left|M_{p}\right| \in\{0,1,|T|\} \\
+\text { cost_regular }\left(\left\langle s_{p \star}\right\rangle, \mathcal{A}, b_{p}\right) & p \in P: 1<\left|M_{p}\right|<|T| \\
+b_{p} \in \mathbb{N} & p \in P \tag{10}
+\end{array}
+\]
+
+Constraints (8) fix $b_{p}$ to zero for participants who trivially have no break in their schedule (e.g., they have a single meeting or as many meetings as there are time slots).
+
+The cost\_regular constraint (9) on any of the previously given automata ( $\mathcal{A}_{1}, \mathcal{A}_{2}, \mathcal{A}_{0}$ ) makes variable $b_{p}$ equal to the sum of the costs of the arcs on the path corresponding to the values taken by the sequence of variables $\left\langle s_{p \star}\right\rangle$ (see Demassey, Pesant, \& Rousseau, 2006). An upper bound on $b_{p}$ will limit the feasible paths in the automaton and possibly remove arcs (i.e., filter values in a domain) that do not belong to any feasible path. Conversely, the smallest cost of the possible paths given the current domains of the variables provides a lower bound on $b_{p}$.
+
+Regarding non-zero labels of automata $\mathcal{A}_{1}$ and $\mathcal{A}_{0}$, they can be meeting identifiers or they can be a reified value representing that there is a scheduled meeting or not. This second option requires the introduction of reification variables but reduces the size of the automaton since the number of possible transitions per state is just two (see Appendix A for more implementation details).
+
+\subsection*{3.3 Additional Constraints}
+We now describe the constraints that need to be added for the variations of the problem described in Section 2.
+
+\begin{itemize}
+  \item Fixed sessions. Constraints (11) and (12) disallow afternoon (resp. morning) meetings taking place during morning (resp. afternoon) time slots.
+\end{itemize}
+
+\[
+\begin{array}{ll}
+s_{p t} \in M_{A M} \cup\{0\} & p \in P, t \in T_{A M} \\
+s_{p t} \in M_{P M} \cup\{0\} & p \in P, t \in T_{P M} \tag{12}
+\end{array}
+\]
+
+\begin{itemize}
+  \item Fixed meetings. Constraints (13) ensure that every fixed meeting is scheduled in its corresponding time slot for each of its two participants. Recall that the fact that each meeting is scheduled exactly once is already enforced by global cardinality constraints (4) or the automata.
+\end{itemize}
+
+
+\begin{align*}
+& s_{p_{1}, \text { fixed }(m)}=m \\
+& s_{p_{2}, \text { fixed }(m)}=m \quad m=\left(p_{1}, p_{2}\right) \in M: \text { fixed }(m)>0 \tag{13}
+\end{align*}
+
+
+\begin{itemize}
+  \item Forbidden time slots. Constraints (14) ensure that there is no meeting scheduled for a participant during one of his forbidden time slots.
+\end{itemize}
+
+
+\begin{equation*}
+s_{p t}=0 \quad p \in P, t \in \operatorname{forb}(p) \tag{14}
+\end{equation*}
+
+
+\begin{itemize}
+  \item Meeting precedences. Constraints (15) define auxiliary variables indicating the time slot in which each meeting is held, which are linked, using an implicit element constraint, to the main decision variables through Constraints (16). Constraints (17) then express the precedences between meetings.
+\end{itemize}
+
+\[
+\begin{array}{rl}
+t_{m} \in T & m \in M \\
+s_{p t_{m}}=m & p \in P, m \in M_{p} \\
+t_{m^{\prime}}<t_{m} & m \in M, m^{\prime} \in \operatorname{prec}(m) \tag{17}
+\end{array}
+\]
+
+\begin{itemize}
+  \item Fairness. Constraints (18) ensure some fairness between individual schedules by requiring that the number of breaks among individual schedules differ by at most some integer parameter $d$.
+\end{itemize}
+
+
+\begin{equation*}
+b_{p}-\min _{p^{\prime} \in P} b_{p^{\prime}} \leq d \quad p \in P \tag{18}
+\end{equation*}
+
+
+\section*{4. MaxSAT Models}
+In this section we present the MaxSAT formulations for the B2BSOP, starting with the base encoding, which is next extended in order to improve its performance in practice. We describe a meta-encoding using cardinality constraints such as at-most- $k$ or exactly- $k$. These constraints can be translated into MaxSAT in different ways. In Section 4.6 we detail the chosen method for each of these constraints.
+
+\subsection*{4.1 MaxSAT Base Encoding}
+The B2BSOP can be encoded to a partial MaxSAT formula (Li \& Manyà, 2009), where some clauses are marked as hard whereas others are marked as soft, and the goal is to find an assignment to the variables that satisfies all hard clauses and falsifies the minimum number of soft clauses. In our case, the falsification of a soft clause will represent the existence of a break for some participant.
+
+\begin{itemize}
+  \item Variables and viewpoint. The MaxSAT model is based in the viewpoint given by Boolean variables stating whether a meeting is scheduled or not in a time slot. With these variables we are able to model feasibility, and all additional constraints not related to breaks (i.e., not related to fairness nor optimization). The variables are
+\end{itemize}
+
+$$
+\text { schedule }_{i, j}: \text { meeting } i \text { is held at time slot } j
+$$
+
+\section*{- Basic constraints for feasibility.}
+\begin{itemize}
+  \item At most one meeting involving the same participant is scheduled at each time slot.
+\end{itemize}
+
+
+\begin{equation*}
+\operatorname{atMost}\left(1,\left\{\text { schedule }_{i, j} \mid i \in M_{p}\right\}\right) \quad p \in P, j \in T \tag{19}
+\end{equation*}
+
+
+\begin{itemize}
+  \item Each meeting not in a fixed session is scheduled in a time slot (see also (22) and (24)).
+\end{itemize}
+
+
+\begin{equation*}
+\operatorname{exactly}\left(1,\left\{\text { schedule }_{i, j} \mid j \in T\right\}\right) \quad i \in M \backslash\left(M_{A M} \cup M_{P M}\right) \tag{20}
+\end{equation*}
+
+\captionsetup{singlelinecheck=false}
+\begin{itemize}
+  \item There are at most as many meetings scheduled in a given time slot as available locations $|L|$.
+\end{itemize}
+
+
+\begin{equation*}
+\text { atMost }\left(|L|,\left\{\text { schedule }_{i, j} \mid i \in M\right\}\right) \quad j \in T \tag{21}
+\end{equation*}
+
+
+With these constraints we get a total mapping from meetings to time slots, except for those meetings that must be held in a particular session ( $M_{A M}$ and $M_{P M}$ meetings). Those are considered in the following subsection.
+
+\subsection*{4.2 Additional Constraints}
+We now describe the constraints that need to be added for the variations of the problem described in Section 2.
+
+\begin{itemize}
+  \item Fixed sessions. Each meeting with a fixed session is scheduled in a slot of the required session, and is not scheduled in a slot of another session.
+\end{itemize}
+
+
+\begin{align*}
+& \operatorname{exactly}\left(1,\left\{\text { schedule }_{i, j} \mid j \in T_{A M}\right\}\right) \quad i \in M_{A M}  \tag{22}\\
+& \neg \text { schedule }_{i, j} \quad i \in M_{A M}, j \in T_{P M}  \tag{23}\\
+& \operatorname{exactly~}\left(1,\left\{\text { schedule }_{i, j} \mid j \in T_{P M}\right\}\right) \quad i \in M_{P M}  \tag{24}\\
+& \neg \text { schedule }_{i, j} \quad i \in M_{P M}, j \in T_{A M} \tag{25}
+\end{align*}
+
+
+\begin{itemize}
+  \item Fixed meetings. Every fixed meeting is scheduled in its corresponding time slot.
+\end{itemize}
+
+
+\begin{equation*}
+\text { schedule }_{m, \text { fixed }(m)} \quad m \in M: \text { fixed }(m)>0 \tag{26}
+\end{equation*}
+
+
+\begin{itemize}
+  \item Forbidden time slots. No meeting is scheduled in a forbidden time slot for any of its participants.
+\end{itemize}
+
+
+\begin{equation*}
+\bigwedge_{i \in M_{p}, j \in f o r b(p)} \neg \text { schedule }_{i, j} \quad p \in P \tag{27}
+\end{equation*}
+
+
+\begin{itemize}
+  \item Meeting precedences. All meetings are scheduled after the meetings that must precede them.
+\end{itemize}
+
+
+\begin{equation*}
+\text { schedule }_{i^{\prime}, j^{\prime}} \rightarrow \neg \text { schedule }_{i, j} \quad i \in M, i^{\prime} \in \operatorname{prec}(i), j, j^{\prime} \in T: j^{\prime} \geq j \tag{28}
+\end{equation*}
+
+
+\begin{itemize}
+  \item Fairness. In order to be able to enforce fairness among participants' schedules, as to minimize the overall number of breaks, we need to be able to detect idle time slots. To this end, we introduce some auxiliary variables:\\
+usedSlot $_{p, j}$ : participant $p$ has a meeting scheduled at time slot $j$.\\
+meetingHeld $_{p, j}$ : participant $p$ has a meeting scheduled at or before time slot $j$.\\
+endHole $_{p, j}$ : participant $p$ has an idle time period (break) finishing at time slot $j$.
+\end{itemize}
+
+We also need to add constraints to define the semantics of these variables:
+
+\begin{itemize}
+  \item If a meeting is scheduled in a certain time slot, then that time slot is used by both participants of the meeting.
+\end{itemize}
+
+
+\begin{equation*}
+\text { schedule }_{i, j} \rightarrow\left(\text { usedSlot }_{p_{1}, j} \wedge \text { usedSlot }_{p_{2}, j}\right) \quad i=\left(p_{1}, p_{2}\right) \in M, j \in T \tag{29}
+\end{equation*}
+
+
+In the reverse direction, if a time slot is used by some participant, then one of the meetings of that participant must be scheduled at that time slot.
+
+
+\begin{equation*}
+\text { usedSlot }_{p, j} \rightarrow \bigvee_{i \in M_{p}} \text { schedule }_{i, j} \quad p \in P, j \in T \tag{30}
+\end{equation*}
+
+
+\begin{itemize}
+  \item For each participant $p$ and time slot $j$, meetingHeld $_{p, j}$ is true if and only if participant $p$ has had a meeting at or before time slot $j$.
+\end{itemize}
+
+
+\begin{align*}
+\neg \text { usedSlot }_{p, 1} & \rightarrow \neg \text { meetingHeld }_{p, 1} & & p \in P  \tag{31}\\
+\left(\neg \text { meetingHeld }_{p, j-1} \wedge \neg \text { usedSlot }_{p, j}\right) & \rightarrow \neg \text { meetingHeld }_{p, j} & & p \in P, j \in T \backslash\{1\}  \tag{32}\\
+\text { usedSlot }_{p, j} & \rightarrow \text { meetingHeld }_{p, j} & & p \in P, j \in T  \tag{33}\\
+\text { meetingHeld }_{p, j-1} & \rightarrow \text { meetingHeld }_{p, j} & & p \in P, j \in T \backslash\{1\} \tag{34}
+\end{align*}
+
+
+Now we can characterize breaks in participants' schedules. If some participant does not have any meeting in a certain time slot, but she has had some meeting before, then she is having break. We reify such pattern with auxiliary variables endHole $_{p, j}$ in order to count the number of breaks of each participant. This will allow us to find the maximum and minimum number of breaks among all participants, and to enforce fairness by bounding their difference.
+
+\begin{itemize}
+  \item $\operatorname{endHole}_{p, j}$ is true if and only if participant $p$ has a break finishing at time slot $j$.
+\end{itemize}
+
+
+\begin{align*}
+& \text { endHole }_{p, j} \leftrightarrow \neg \text { usedSlot }_{p, j} \wedge \text { meetingHeld }_{p, j} \wedge \text { usedSlot }_{p, j+1} \\
+& \qquad p \in P, j \in T \backslash\{|T|\} \tag{35}
+\end{align*}
+
+
+\begin{itemize}
+  \item The list of variables sortedHole $_{p, 1}, \ldots$, sortedHole $_{p,|T|-1}$ corresponds to the unary representation of the number of breaks of each participant $p$. In other words, sortedHole $_{p, j}$ holds iff participant $p$ has at least $j$ breaks in her schedule. This list is obtained by sorting decreasingly the endHole variables.
+\end{itemize}
+
+
+\begin{equation*}
+\operatorname{sort}\left(\left[\operatorname{endHole}_{p, j}: j \in T\right],\left[\operatorname{sortedHole}_{p, j}: j \in T \backslash\{|T|\}\right]\right) \quad p \in P \tag{36}
+\end{equation*}
+
+
+\begin{itemize}
+  \item $\max _{1}, \ldots, \max _{\lfloor(|T|-1) / 2\rfloor}$ and $\min _{1}, \ldots, \min _{\lfloor(|T|-1) / 2\rfloor}$ are unary representations of bounds on the maximum and minimum number of breaks among all participants, respectively.
+\end{itemize}
+
+\[
+\begin{array}{cl}
+\text { sortedHole }_{p, j} \rightarrow \text { max }_{j} & p \in P, j \in 1 . .\lfloor(|T|-1) / 2\rfloor \\
+\neg \text { sortedHole }_{p, j} \rightarrow \neg \text { min }_{j} & p \in P, j \in 1 . .\lfloor(|T|-1) / 2\rfloor \tag{38}
+\end{array}
+\]
+
+Note that there can be at most $\lfloor(|T|-1) / 2\rfloor$ breaks per participant.\\
+Constraints (37) ensure that $\max _{1}, \ldots, \max _{\lfloor(|T|-1) / 2\rfloor}$ (interpreted as a unary representation of a number) is greater or equal than the maximum number of holes among all participants, and Constraints (38) ensure that $\min _{1}, \ldots, \min _{\lfloor(|T|-1) / 2\rfloor}$ is smaller or equal than the minimum number of holes among all participants. Finally, Constraints (39) and (40) enforce the required fairness degree.
+
+\begin{itemize}
+  \item The difference between the maximum and minimum number of breaks must be at most $d$.
+\end{itemize}
+
+
+\begin{gather*}
+\neg \min _{j} \wedge \max _{j} \rightarrow \operatorname{dif}_{j} \quad j \in 1 . .\lfloor(|T|-1) / 2\rfloor  \tag{39}\\
+\operatorname{atMost}\left(d,\left\{\operatorname{dif}_{j} \mid j \in 1 . .\lfloor(|T|-1) / 2\rfloor\right\}\right) \tag{40}
+\end{gather*}
+
+
+\subsection*{4.3 Optimization}
+Minimization of the number of breaks is achieved by means of soft constraints. We simply post as soft constraint the negation sortedHole ${ }_{p, j}$ variables. Knowing that each participant will have at most $\lfloor(|T|-1) / 2\rfloor$ breaks, we have a limited number of soft constraints.
+
+
+\begin{equation*}
+\neg \text { sortedHole }_{p, j} \quad p \in P, j \in 1 . .\lfloor(|T|-1) / 2\rfloor \tag{41}
+\end{equation*}
+
+
+Note that, each sortedHole $_{p, j}$ variable set to true, increases the cost by 1 .\\
+In case there is no homogeneity (i.e., $d=\infty$ ) we could simply post as soft constraints the reified clauses characterizing holes from Constraints (35).
+
+
+\begin{equation*}
+\left(\neg \text { usedSlot }_{p, j} \wedge \text { meetingHeld }_{p, j}\right) \rightarrow \neg \text { usedSlot }_{p, j+1} \quad p \in P, j \in T \backslash\{|T|\} \tag{42}
+\end{equation*}
+
+
+Remark 4.1. If we were considering optimization but no fairness, Constraints (31) and (32) would not be necessary, since minimization of the number of breaks would force the value of meetingHeld ${ }_{p, j}$ to be false for every participant $p$ and time slot $j$ previous to the first meeting of $p$. However, since we are also seeking fairness, these constraints are mandatory. Without them, the value of meetingHeld ${ }_{p, j}$ could be set to true for time slots $j$ previous to the first meeting of p, inducing a fake break in order to satisfy the (hard) fairness constraints defined in Section 4.2.
+
+\subsection*{4.4 Implied Constraints}
+We have identified the following implied constraints.
+
+\begin{itemize}
+  \item Implied Constraint 1. The number of meetings of a participant $p$ as derived from usedSlot $_{p, j}$ variables must match the total number of meetings of $p$.
+\end{itemize}
+
+
+\begin{equation*}
+\operatorname{exactly}\left(\left|M_{p}\right|,\left\{\text { usedSlot }_{p, j} \mid j \in T\right\}\right) \quad p \in P \tag{43}
+\end{equation*}
+
+
+\begin{itemize}
+  \item Implied Constraint 2. The number of participants having a meeting in a given time slot is bounded by twice the number of available locations.
+\end{itemize}
+
+
+\begin{equation*}
+\operatorname{atMost}\left(2 \times|L|,\left\{\text { usedSlot }_{p, j} \mid p \in P\right\}\right) \quad j \in T \tag{44}
+\end{equation*}
+
+
+As we will see in the experiments, both implied constraints are really helpful and, in combination, they allow to solve all original instances within the given time limit. A possible reason for such efficiency is that they are able to detect inconsistent partial assignments that are not detectable without these implied constraints. Consider for instance a participant $p$ with still $m$ meetings to schedule within $m$ still available time slots. Suppose that one of such time slots, say $j$, became unavailable due to the scheduling of as many meetings as available locations, and that none of these meetings involves participant $p$. Then, Constraint (44) will set variable $u_{\text {sedSlot }}^{p, j}$ to false but this will clash with Constraint (43) that will enforce usedSlot $_{p, j}$ to be true.
+
+\subsection*{4.5 Further Improvements}
+We have also improved the encoding taking into account further knowledge of the problem. Namely, we know that the number of participants having a meeting in a given time slot is even because meetings always involve two distinct participants. We also know that among all the meetings of a same participant, just one can take place in a particular timeslot.
+
+\subsection*{4.5.1 Even number of participants}
+Let $o_{j, 1}, \ldots o_{j, 2 \times|L|}$ be the output variables of the cardinality network corresponding to Constraint (44) for a given timeslot $j \in T$. To enforce that the number of participants is an even number in all time slots we add the following clauses:
+
+
+\begin{equation*}
+o_{j, i} \rightarrow o_{j, i+1} \quad i \in\{1,3, \ldots 2 \times|L|-1\}, j \in T \tag{45}
+\end{equation*}
+
+
+\subsection*{4.5.2 At most one meeting of a same participant}
+When counting the number of scheduled meetings in a timeslot, in Constraints (21), we have to bound them by the number of available locations $|L|$. However, we do not need to consider all possible meetings simultaneously because plenty of them are mutually exclusive, e.g., among all meetings of the same participant just one can be held.
+
+Therefore, instead of considering all meetings in Constraints (21) we will consider clusters of meetings, where all meetings of a cluster share the same participant, hence being mutually exclusive. We greedily compute a partition $\Pi$ of meetings where each subset is one of such clusters. Then, for each cluster $c$ and timeslot $j \in T$ we introduce an auxiliary variable $c l_{c, j}$. We add the following clauses:
+
+
+\begin{equation*}
+\text { schedule }_{i, j} \rightarrow c l_{c, j} \quad c \in \Pi, i \in c, j \in T \tag{46}
+\end{equation*}
+
+
+and change Constraints (21) by the following:
+
+
+\begin{equation*}
+\operatorname{atMost}\left(|L|,\left\{c l_{c, j} \mid c \in \Pi\right\}\right) \quad j \in T \tag{47}
+\end{equation*}
+
+
+The idea is that since at most one meeting of each cluster can be scheduled in each time slot, it suffices to limit the number of active clusters to $|L|$ at any time. This results in a significant reduction on the number of variables and clauses of the generated formulas. This is so because the number of input variables of the atMost constraints of Constraints (21) are reduced between 2 and 4 times. For example, the input of those cardinality constraints for instance ticf-14crafa is reduced from 302 to just 79 variables. This results in a formula of just 119,577 variables and 389,280 clauses, instead of the 241,149 variables and 632,820 clauses of the corresponding formula without this improvement. Moreover, as we will see in Table 3, solving time of this instance is almost halved.
+
+\subsection*{4.6 Encoding of Global Constraints}
+The cardinality constraints stating that at most (atMost) or exactly (exactly) $k$ of a given set of variables must be true have been encoded as follows.
+
+\begin{itemize}
+  \item atMost( 1, \_): quadratic number of pairwise mutex clauses.
+  \item $\operatorname{exactly}(1,,-)$ : commander-variable encoding (Klieber \& Kwon, 2007).
+  \item $\operatorname{exactly}(k$, \_): cardinality networks (Abío et al., 2013).
+  \item $\operatorname{atMost}\left(k,,_{-}\right)$of Constraints (21), (40) and (47): sequential counter (Sinz, 2005).
+  \item $\operatorname{atMost}(k$, \_) of Constraints (44): cardinality network (Abío et al., 2013).
+  \item $\operatorname{sort}\left({ }_{-},-\right)$of Constraints (36): cardinality network (Abío et al., 2013).
+\end{itemize}
+
+These are the encodings that we found to return the best results on this problem.
+
+\section*{5. Mixed-Integer Programming Model}
+In this section we provide a native MIP formulation that exactly solves the B2BSOP. This formulation is based on the logical model presented by Pesant et al. (2015), extended with new constraints to encode additional participants' requirements. In this formulation, the feasibility of the problem is encoded with a set of binary variables representing that a meeting is held in a particular time slot, where a set of constraints on these variables enforces a feasible schedule without considering the minimization of breaks. Then, the objective function is encoded using binary variables determining the terminating time slots of the breaks of each participant, which are linked to the feasibility problem through a series of linearized logical constraints. Although there exist other MIP formulations to this problem (Pesant et al., 2015), they do not show remarkable improvements solving real-world B2B instances, so they are not considered in this work.
+
+At the end of this section we also provide further improvements of the introduced MIP formulation.
+
+\subsection*{5.1 Feasibility}
+We first give the formulation to enforce the feasibility of a solution. Let $x_{m t}$ be a binary variable that equals 1 if a meeting $m$ is held at time $t$. Using these variables, the following constraints enforce the feasibility of a schedule:
+
+\[
+\begin{array}{rlrl}
+\sum_{t \in T} x_{m t} & =1 & m \in M \\
+\sum_{m \in M_{p}} x_{m t} & \leq 1 & p \in P, t \in T \\
+\sum_{m \in M} x_{m t} \leq|L| & & t \in T \\
+x_{m t} & =0 & m \in M_{A M}, t \in T_{P M} \\
+x_{m t} & =0 & m \in M_{P M}, t \in T_{A M} \tag{52}
+\end{array}
+\]
+
+Constraints (48) force each meeting to be held exactly once. Constraints (49) force each participant to be in at most one meeting at a time. Constraints (50) force the number of meetings at any time to be at most the number of available locations. Finally, Constraints (51) and (52) force the fixed sessions.
+
+\subsection*{5.2 Optimization}
+In order to define the optimization function of the B2BSOP, we define the following variables:
+
+$$
+\begin{array}{ll}
+b^{\prime} \in \mathbb{N} & \begin{array}{l}
+\text { Variable upper bounding the maximum number of breaks assigned } \\
+\text { to any participant. }
+\end{array} \\
+y_{p t} \in\{0,1\} & \text { Indicator if participant } p \text { has a meeting at time } t . \\
+z_{p t} \in\{0,1\} & \text { Equals } 1 \text { for time } t \text { starting from participant } p^{\prime} \text { s first meeting. } \\
+h_{p t} \in\{0,1\} & \text { Indicator if time } t \text { terminates a break for participant } p .
+\end{array}
+$$
+
+The variables $h_{p t}$ contribute a value of 1 to the objective function. The necessary constraints linking these variables to the model are the following.
+
+\[
+\begin{array}{rl}
+\sum_{t \in T} y_{p t}=\left|M_{p}\right| & p \in P \\
+x_{m t} \leq y_{p t} & p \in P, m \in M_{p}, t \in T \\
+y_{p t} \leq z_{p t} & p \in P, t \in T \\
+z_{p t} \leq z_{p, t+1} & p \in P, t \in T, t \leq|T|-1 \\
+y_{p, t+1}-h_{p t} \leq y_{p t}+1-z_{p t} & p \in P, t \in T, t \leq|T|-1 \\
+\sum_{t \in T} h_{p t} \leq b^{\prime} & p \in P \\
+\sum_{t \in T} h_{p t} \geq b^{\prime}-d & p \in P \tag{59}
+\end{array}
+\]
+
+Constraints (53) through (56) link the $y$ and $z$ variables to the formulation. Constraints (57) then link the $h$ variables to the formulation, forcing a break to be counted after an idle period. Constraints (58) and (59) are fairness constraints that limit the difference in the number of breaks per participant. We then define the problem as the minimization of the objective function:
+
+
+\begin{equation*}
+\sum_{p \in P} \sum_{t \in T} h_{p t} \tag{60}
+\end{equation*}
+
+
+subject to constraints (48) through (52) and (53) through (59).
+
+\subsection*{5.3 Additional Constraints}
+We add the following constraints for the extensions of the problem described in Section 2 that are not supported by Pesant et al. (2015):
+
+\begin{itemize}
+  \item Fixed meetings. Every fixed meeting is scheduled in its corresponding time slot.
+\end{itemize}
+
+
+\begin{equation*}
+x_{m, f i x e d(m)}=1 \quad m \in M: f i x e d(m)>0 \tag{61}
+\end{equation*}
+
+
+\begin{itemize}
+  \item Forbidden time slots. No meeting is scheduled in a forbidden time slot for any participant.
+\end{itemize}
+
+
+\begin{equation*}
+y_{p t}=0 \quad p \in P, t \in \operatorname{forb}(p) \tag{62}
+\end{equation*}
+
+
+\begin{itemize}
+  \item Meeting precedences. Every meeting is scheduled after the meeting that precedes it.
+\end{itemize}
+
+
+\begin{equation*}
+x_{m t} \leq \sum_{t^{\prime}<t} x_{m^{\prime} t^{\prime}} \quad m \in M, m^{\prime} \in \operatorname{prec}(m), t \in T \tag{63}
+\end{equation*}
+
+
+\subsection*{5.4 Further Improvements}
+In order to improve the model, we also add the following implied constraints.
+
+\[
+\begin{array}{rl}
+\sum_{p \in P} y_{p t} \leq 2 *|L| & t \in T \\
+z_{p(|T|)}=0 & p \in P:\left|M_{p}\right|=0 \\
+z_{p(|T|)}=1 & p \in P:\left|M_{p}\right|>0 \\
+z_{p t}=1 & p \in P, t \in T:\left|M_{p}\right|=|T| \\
+h_{p t} & =0 \quad p \in P, t \in T:\left|M_{p}\right| \leq 1 \vee\left|M_{p}\right|=|T| \\
+d & \geq b^{\prime}-\max \left(0, \min _{p \in P}\left(\min \left(\left|M_{p}\right|-1,|T|-\left|M_{p}\right|\right)\right)\right) \tag{69}
+\end{array}
+\]
+
+Constraint (64) is analogous to Implied Constraint (44) of the MaxSAT model. Notice however, that Implied Constraint (43) of the MaxSAT model is analogous to Constraint (53) of the MIP model. Constraints (65), (66) and (67) enforce that variables $z_{p t}$ have the right value in the last time slot, according to the number of meetings of each participant. Constraint (68) enforces the right value of variables $h_{p t}$ for those participants that will not have any break according to their number of meetings. Finally, Constraint (69) bounds $b^{\prime}$ taking into account the maximum possible number of breaks of the participant.
+
+\section*{6. Comparing Models}
+Even though the models described in the previous sections are meant to be used with different solving approaches and therefore are likely to each be expressed in the most appropriate yet distinct formalism for the approach used, it can be instructive to examine the main differences between them, beyond the usual observation that CP models typically use fewer variables (not being Boolean/binary) and fewer constraints (thanks to global constraints representing common combinatorial substructures).
+
+The most immediate and fundamental difference is in the choice of variables. The CP models are participant-centered, using variables whose value represents the meeting attended by a participant at a given time. This makes it easy to retrieve what a given participant is doing at a particular time but not so much when a given meeting is set to happen. The MaxSAT models, following what was proposed by Bofill et al. (2014), are meeting-centered, featuring Boolean variables stating whether a meeting is happening at a given time. This makes it easy to retrieve when a given meeting occurs but not so much a given participant's schedule. The MIP model is meeting-centered as well and almost identical to the MaxSAT models as far as the feasibility part is concerned: Boolean variables become binary variables and cardinality constraints become (pseudo-Boolean) linear constraints.
+
+The meeting-centered viewpoint could have been an alternative for CP however such a representation would not have allowed expressing constraints directly on the sequence of meetings for a participant, which is important to evaluate the cost of an individual schedule and ultimately the objective we seek to minimize. All constraints in the CP models are easily expressed using the participant-centered variables except if we add meeting precedences, for which auxiliary variables providing a meetings viewpoint are defined and linked to the main variables. Feasibility constraints in the MaxSAT and MIP models are easily expressed using meeting-centered variables but optimization and fairness constraints - both related to a participant's schedule - require auxiliary variables.
+
+Another distinctive feature is how optimization is handled. For our CP and MIP approaches, all constraints are considered hard. In the CP model, optimization constraint cost\_regular assigns a unit cost to each break in a schedule and provides a cost variable thus summing breaks and that can be used by the objective function. The logical MIP model described in this paper defines the objective function through auxiliary variables but other MIP models described in Pesant et al. (2015), closer to the CP model, linearize the cost\_regular formulation. In contrast, for our MaxSAT approach some constraints those enforcing that there should be no break - are specified as soft so that maximizing the number of satisfied soft constraints achieves the desired objective.
+
+For all three approaches, sometimes adding redundant/implied constraints (cuts) helps solve problems faster. Such is the case here for the implied constraints mentioned for MaxSAT and MIP - these do not need to be added in our CP models because they are already expressed through the global cardinality constraints.
+
+\section*{7. Evaluation}
+In this section we describe the results of the experimental investigation performed. In particular, we present:
+
+\begin{table}[h]
+\begin{center}
+\captionsetup{labelformat=empty}
+\caption{Table 1: Description of original B2B instances.}
+\begin{tabular}{|l|l|l|l|l|l|l|l|l|l|l|l|l|l|l|l|l|l|l|l|l|}
+\hline
+feature & forum-13 & forum-13crafb & forum-13crafc & forum-14 & forumt-14 & forumt-14crafc & forumt-14crafd & forumt-14crafe & tic-12 & tic-12crafc & tic-13 & tic-13crafb & tic-13crafc & tic-14crafa & tic-14crafc & tic-14crafd & ticf-13crafa & ticf-13crafb & ticf-13crafc & ticf-14crafa \\
+\hline
+\#participants & 70 & 76 & 70 & 78 & 60 & 60 & 60 & 60 & 42 & 42 & 47 & 46 & 47 & 60 & 60 & 60 & 70 & 76 & 70 & 78 \\
+\hline
+\#meetings & 154 & 195 & 154 & 302 & 237 & 237 & 236 & 236 & 125 & 125 & 180 & 184 & 180 & 237 & 237 & 236 & 154 & 195 & 154 & 302 \\
+\hline
+\#time slots & 21 & 22 & 21 & 22 & 10 & 10 & 10 & 10 & 8 & 8 & 10 & 10 & 10 & 10 & 10 & 10 & 21 & 22 & 21 & 22 \\
+\hline
+\#locations & 14 & 14 & 12 & 22 & 27 & 25 & 25 & 24 & 21 & 16 & 21 & 21 & 19 & 27 & 25 & 25 & 14 & 14 & 12 & 22 \\
+\hline
+\%forbidden & 6.3 & 4.6 & 6.3 & 10.8 & 12.3 & 12.3 & 12.3 & 12.3 & 12.5 & 12.5 & 10 & 10 & 10 & 10 & 10 & 10 & 4.8 & 4.6 & 4.8 & 4.6 \\
+\hline
+AM/PM? & Y & Y & Y & Y & N & N & N & N & N & N & N & N & N & N & N & N & Y & Y & Y & Y \\
+\hline
+\%morningslots & 13 & 12 & 13 & 12 & - & - & - & - & - & - & - & - & - & - & - & - & 13 & 12 & 13 & 12 \\
+\hline
+\end{tabular}
+\end{center}
+\end{table}
+
+\begin{itemize}
+  \item An evaluation of the different CP models, using $\mathcal{A}_{0}$ and $\mathcal{A}_{1}$ automata, considering the complete schedule of each participant or a reified version of it. This is done in Subsection 7.1.
+  \item An evaluation of the different MaxSAT encodings with the distinct improvements proposed on the original instances. This is done in Subsection 7.2.
+  \item An evaluation of the proposed MIP models, again on the original instances. This is done in Subsection 7.3.
+  \item A comparison of the best CP, MaxSAT and MIP configurations. The comparison is done on the original instances as well as on crafted versions of those original instances where additional constraints have been considered (fixed sessions, fixed meetings, forbidden time slots, precedences and distinct fairness values). This is done in Subsection 7.4.
+\end{itemize}
+
+In Table 1 we describe the characteristics of the original B2B instances used in the experiments. In particular, we report the number of participants, meetings, time slots and locations for each instance, as well as the percentages of forbidden time slots and morning time slots. We recall that these instances have been already used in previous works (Bofill et al., 2014; Pesant et al., 2015; Bofill et al., 2015). There are no instances with fixed meetings or meeting precedences. As in previous works, the value of fairness $d$ has been set to 2 .
+
+The experiments have been run on a cluster of CPU nodes Intel Xeon E3-1220v2 at 3.10 GHz with 8 GB of RAM. The timeout is 7200 seconds in all experiments.
+
+\subsection*{7.1 CP Evaluation}
+We have considered the models described in Section 3 with automata $\mathcal{A}_{0}$ and $\mathcal{A}_{1}$ (automaton $\mathcal{A}_{2}$ was too big). Moreover, we have used these automata either on the $s$ variables (the ones describing the complete schedule of each participant) or on a reification of them (reified) meaning having meeting/not having meeting.
+
+These models have been implemented using MiniZinc. Thanks to this we have been able to easily compare three solving methodologies: pure CP with Gecode ${ }^{2}$ (Schulte, Tack, \&
+
+\footnotetext{\begin{enumerate}
+  \setcounter{enumi}{1}
+  \item \href{https://github.com/Gecode/gecode}{https://github.com/Gecode/gecode}.
+\end{enumerate}
+}Lagerkvist, 2019) version 6.2.0, Lazy Clause Generation with Chuffed ${ }^{3}$ (Chu, 2011) commit 23b9fce, and integer programming with IBM ILOG Cplex ${ }^{4}$ (Cplex, 2009) version 12.9.0. In Appendix A we provide a complete MiniZinc model and details on how to build the different variants.
+
+Regarding search strategies, ${ }^{5}$ we considered input\_order and first\_fail strategies for $s$ variables, resulting in no significant performance difference but being slightly better input\_order. This is the search strategy used for Gecode. However, for Chuffed we obtained much better results with a search strategy that first tries to make the objective value as small as possible, and then continues with input\_order over variables $s$. Moreover, for Chuffed we also enable the free search option, which alternates between the given search strategy and activity-based search strategy.
+
+\begin{table}[h]
+\begin{center}
+\captionsetup{labelformat=empty}
+\caption{Table 2: Comparison of $\mathcal{A}_{1}$ and $\mathcal{A}_{0}$ with Chuffed solver. Fairness is set to $d=2$. TO stands for time-out ( 7200 seconds).}
+\begin{tabular}{|l|l|l|l|l|}
+\hline
+ & \multicolumn{2}{|c|}{$\mathcal{A}_{1}$} & \multicolumn{2}{|c|}{$\mathcal{A}_{0}$} \\
+\hline
+instance & complete & reified & complete & reified \\
+\hline
+forum-13 & TO & 1427.4 & 4182.5 & 2891.2 \\
+\hline
+forum-13crafb & TO & 1808.3 & 3551.0 & 1725.6 \\
+\hline
+forum-13crafc & TO & TO & TO & TO \\
+\hline
+forum-14 & TO & 3465.8 & 3802.1 & 873.9 \\
+\hline
+forumt-14 & 10.9 & 4.2 & 12.6 & 5.6 \\
+\hline
+forumt-14crafc & 72.5 & 29.0 & 35.8 & 20.2 \\
+\hline
+forumt-14crafd & 63.7 & 30.9 & 32.0 & 20.9 \\
+\hline
+forumt-14crafe & 56.3 & 37.5 & 34.9 & 26.3 \\
+\hline
+tic-12 & 2.3 & 0.8 & 2.5 & 0.8 \\
+\hline
+tic-12crafc & 2.1 & 0.9 & 4.1 & 1.2 \\
+\hline
+tic-13 & 23.6 & 17.3 & 45.6 & 16.9 \\
+\hline
+tic-13crafb & 8.2 & 3.2 & 4.1 & 2.0 \\
+\hline
+tic-13crafc & 1746.0 & 847.6 & 1643.9 & 518.2 \\
+\hline
+tic-14crafa & 54.0 & 25.0 & 46.4 & 22.4 \\
+\hline
+tic-14crafc & 44.8 & 34.4 & 55.3 & 24.1 \\
+\hline
+tic-14crafd & 11.5 & 3.4 & 21.4 & 6.2 \\
+\hline
+ticf-13crafa & TO & 5657.7 & TO & 2973.4 \\
+\hline
+ticf-13crafb & TO & 3026.2 & 3932.0 & 2291.9 \\
+\hline
+ticf-13crafc & TO & TO & TO & TO \\
+\hline
+ticf-14crafa & TO & 5249.8 & TO & 1714.8 \\
+\hline
+\#solved & 12 & 18 & 16 & 18 \\
+\hline
+\end{tabular}
+\end{center}
+\end{table}
+
+In Table 2 we report on the evaluation of the four possible configurations with Chuffed on the original instances. As we can observe, reified always solves more instances than
+
+\footnotetext{\begin{enumerate}
+  \setcounter{enumi}{2}
+  \item \href{https://github.com/chuffed/chuffed}{https://github.com/chuffed/chuffed}.
+  \item \href{https://www.ibm.com/products/ilog-cplex-optimization-studio}{https://www.ibm.com/products/ilog-cplex-optimization-studio}.
+  \item The search strategy originally used by Pesant et al. (2015) is not available in MiniZinc.
+\end{enumerate}
+}\begin{enumerate}
+  \setcounter{enumi}{1}
+  \item 
+\end{enumerate}
+
+\begin{enumerate}
+  \setcounter{enumi}{2}
+  \item 
+  \item 
+  \item 
+\end{enumerate}
+\captionsetup{singlelinecheck=false}
+complete. Also, $\mathcal{A}_{0}$ is better than $\mathcal{A}_{1}$, since it solves more instances in complete, and the same instances but generally faster in reified. This may well be due to the fact that $\mathcal{A}_{0}$ with reification results in the smallest configuration. Therefore, $\mathcal{A}_{0}$ and reified is the chosen configuration for the remaining experiments when using Chuffed. We have also tested Gecode and Cplex solvers with the four configurations of automata, which are not competitive as shown in Subsection 7.4.1. In particular, the results with Gecode are not competitive at all, but we include in Table 5 the results with $\mathcal{A}_{0}$ and reified which is the best option. Regarding Cplex, $\mathcal{A}_{0}$ and reified is also the best option, but as we will observe in Table 5, using the native MIP model gives much better results than using a MIP translation of the CP models.
+
+\subsection*{7.2 MaxSAT Evaluation}
+In this section we analyze the efficiency of the MaxSAT encodings provided in Section 4, namely: basic (corresponding to the MaxSAT base encoding), imp1, imp2, imp12 and imp $12^{+}$, which correspond to the encodings that incorporate the first, the second, and both implied constraints, as well as the further improvements, respectively. The MaxSAT solver used is UWrMaxSAT ${ }^{6}$ (Piotrów, 2019) version 1.0, which was one of the best MaxSAT solvers of the unweighted track of the 2019 MaxSAT Evaluation.
+
+In Table 3, we report on the solving times obtained with each approach on the set of original instances. As we can see, adding implied constraints results in better performances. In particular, with imp12 we are able to solve all the 20 instances (in Section 4.4 we provide possible hints on the interaction between the implied constraint to early prune wrong partial assignments). Another interesting observation is that imp1 seems to be a bit faster than imp2, but each of these two encodings is able to solve two instances that cannot be solved by the other. This suggests that imp1 and imp2 may be somehow complementary in harder instances. Finally, imp12 ${ }^{+}$is able to improve the solving times in 19 of the 20 instances considered with respect to imp12, hence this is the chosen encoding for the remaining experiments and we refer to it as MaxSAT.
+
+\subsection*{7.3 MIP Evaluation}
+In this section we compare the native MIP model provided in Section 5, with and without the improvements of Subsection 5.4. We refer to these as imp and basic respectivelly. For solving the MIP models we use IBM ILOG Cplex (Cplex, 2009) version 12.9.0.
+
+As we can see in Table 4, the implied constraints added in Section 5.4 slightly improve the efficiency of the approach allowing one more instance to be solved and improving the solving times of many other instances. Therefore, from now on we will use this improved model and refer to it simply as MIP.
+
+\subsection*{7.4 Comparison}
+In this section we compare the best CP configuration, the best MaxSAT encoding and the best MIP formulation on the original instances as well as on crafted modifications from these. The crafted modifications add some properties that we think are worthy to take\\
+6. \href{https://github.com/marekpiotrow/UWrMaxSat}{https://github.com/marekpiotrow/UWrMaxSat}.
+
+\begin{table}[h]
+\begin{center}
+\captionsetup{labelformat=empty}
+\caption{Table 3: Solving times and best solutions found on original B2B instances with MaxSAT. Fairness is set to $d=2$. TO stands for time-out ( 7200 seconds).}
+\begin{tabular}{|l|l|l|l|l|l|l|l|l|l|l|}
+\hline
+instance & \multicolumn{2}{|c|}{basic} & \multicolumn{2}{|c|}{imp1} & \multicolumn{2}{|c|}{imp2} & \multicolumn{2}{|c|}{imp12} & \multicolumn{2}{|c|}{imp12 ${ }^{+}$} \\
+\hline
+forum-13 & 2.5 & 0 & 2.4 & 0 & 6.5 & 0 & 2.9 & 0 & 2.5 & 0 \\
+\hline
+forum-13crafb & TO &  & 80.6 & 6 & 248.1 & 6 & 37.5 & 6 & 23.3 & 6 \\
+\hline
+forum-13crafc & 17.8 & 1 & 2.7 & 1 & 43.9 & 1 & 22.4 & 1 & 2.3 & 1 \\
+\hline
+forum-14 & TO &  & 14.6 & 2 & TO &  & 11.9 & 2 & 5.1 & 2 \\
+\hline
+forumt-14 & 2.8 & 5 & 1.6 & 5 & 3.0 & 5 & 1.6 & 5 & 0.5 & 5 \\
+\hline
+forumt-14crafc & 9.4 & 5 & 1.8 & 5 & 4.1 & 5 & 1.6 & 5 & 0.9 & 5 \\
+\hline
+forumt-14crafd & 2.6 & 4 & 1.9 & 4 & 7.8 & 4 & 1.5 & 4 & 0.4 & 4 \\
+\hline
+forumt-14crafe & TO &  & TO &  & 92.4 & 5 & 1.5 & 5 & 0.6 & 5 \\
+\hline
+tic-12 & 0.6 & 0 & 0.4 & 0 & 0.6 & 0 & 0.3 & 0 & 0.1 & 0 \\
+\hline
+tic-12crafc & 0.8 & 0 & 0.5 & 0 & 1.4 & 0 & 0.2 & 0 & 0.3 & 0 \\
+\hline
+tic-13 & 1.1 & 0 & 1.6 & 0 & 2.5 & 0 & 1.5 & 0 & 0.4 & 0 \\
+\hline
+tic-13crafb & 1.3 & 0 & 1.4 & 0 & 1.2 & 0 & 1.4 & 0 & 0.4 & 0 \\
+\hline
+tic-13crafc & TO &  & TO &  & 200.7 & 4 & 7.6 & 4 & 5.8 & 4 \\
+\hline
+tic-14crafa & 2.5 & 0 & 1.7 & 0 & 2.9 & 0 & 1.8 & 0 & 1.0 & 0 \\
+\hline
+tic-14crafc & 51.3 & 0 & 3.5 & 0 & 5.9 & 0 & 1.5 & 0 & 0.8 & 0 \\
+\hline
+tic-14crafd & 4.0 & 0 & 1.8 & 0 & 2.7 & 0 & 1.5 & 0 & 0.8 & 0 \\
+\hline
+ticf-13crafa & 3.3 & 0 & 2.5 & 0 & 9.9 & 0 & 5.1 & 0 & 2.2 & 0 \\
+\hline
+ticf-13crafb & 822.2 & 3 & 90.2 & 3 & 213.8 & 3 & 31.3 & 3 & 22.3 & 3 \\
+\hline
+ticf-13crafc & 40.1 & 1 & 4.7 & 1 & 438.6 & 1 & 15.5 & 1 & 3.7 & 1 \\
+\hline
+ticf-14crafa & TO &  & 32.7 & 0 & TO &  & 12.4 & 0 & 7.6 & 0 \\
+\hline
+\#solved & 15 &  & 18 &  & 18 &  & 20 &  & 20 &  \\
+\hline
+\end{tabular}
+\end{center}
+\end{table}
+
+into account in the comparisons like, for instance, more constrained instances, unsatisfiable instances, higher optimums, etc.
+
+\subsection*{7.4.1 Comparison on the Original Instances}
+In Table 5 we compare all best configurations and encodings of the considered approaches. As we can see, MaxSAT clearly dominates all other approaches since it is able to solve all the instances, sometimes orders of magnitude faster than the others. Notice that its worst reported solving time is of just 24 seconds (within a time-out of 7200 seconds). The next best approach is Chuffed with 18 solved instances, and then the native MIP model with 16. It is worth noticing that the CP model with Gecode and Cplex is not able to provide any upper bound for several instances while Chuffed and the native MIP model always report some solution. Therefore, Gecode and Cplex for CP are not used in the remaining experiments.
+
+Next we extend the set of benchmarks by introducing some random modifications to each original B2B instance (forbidden time slots, fixed meetings, and meeting precedences). We also analyze how the value of the fairness parameter $d$ affects the solvers' performance.
+
+\begin{table}[h]
+\begin{center}
+\captionsetup{labelformat=empty}
+\caption{Table 4: Solving times and best solutions found on original B2B instances with MIP models, non-using improvements of Subsection 5.4 (basic) and using them (imp). Fairness is set to $d=2$. TO stands for time-out ( 7200 seconds).}
+\begin{tabular}{|l|l|l|l|l|}
+\hline
+instance & \multicolumn{2}{|c|}{basic} & \multicolumn{2}{|c|}{imp} \\
+\hline
+forum-13 & 3765.7 & 0 & 648.4 & 0 \\
+\hline
+forum-13crafb & TO & 22 & TO & 12 \\
+\hline
+forum-13crafc & TO & 6 & TO & 8 \\
+\hline
+forum-14 & TO & 28 & TO & 21 \\
+\hline
+forumt-14 & 173.1 & 5 & 44.9 & 5 \\
+\hline
+forumt-14crafc & 143.3 & 5 & 894.2 & 5 \\
+\hline
+forumt-14crafd & 1724.4 & 4 & 217.6 & 4 \\
+\hline
+forumt-14crafe & TO & 5 & 1311.8 & 5 \\
+\hline
+tic-12 & 4.4 & 0 & 13.8 & 0 \\
+\hline
+tic-12crafc & 20.4 & 0 & 8.9 & 0 \\
+\hline
+tic-13 & 3499.1 & 0 & 162.5 & 0 \\
+\hline
+tic-13crafb & 62.7 & 0 & 44.1 & 0 \\
+\hline
+tic-13crafc & 206.9 & 4 & 128.6 & 4 \\
+\hline
+tic-14crafa & 1443.6 & 0 & 326.3 & 0 \\
+\hline
+tic-14crafc & 302.8 & 0 & 628.1 & 0 \\
+\hline
+tic-14crafd & 872.3 & 0 & 194.7 & 0 \\
+\hline
+ticf-13crafa & 2012.5 & 0 & 1583.6 & 0 \\
+\hline
+ticf-13crafb & TO & 29 & TO & 17 \\
+\hline
+ticf-13crafc & TO & 14 & TO & 3 \\
+\hline
+ticf-14crafa & TO & 26 & TO & 22 \\
+\hline
+\#solved & 13 &  & 14 &  \\
+\hline
+\end{tabular}
+\end{center}
+\end{table}
+
+These modifications produce a set of 180 new B2B instances, that we add to the 20 original ones.
+
+\subsection*{7.4.2 Forbidden Slots}
+The first modification introduced is on forbidden time slots. In particular, we modify the original B2B instances by varying the density $\alpha$ of forbidden time slots, with $0 \leq \alpha \leq 100$, where $\alpha=0$ means that no participant has any forbidden time slot, and $\alpha=100$ means that all participants have all time slots forbidden (thus the instance is trivially infeasible). We evaluate this modification with $\alpha=0.3 \%$ and $\alpha=0.7 \%$. Forbidden time slots are generated randomly. In order to generate these instances, we previously remove any existing forbidden time slot. We use such low values of $\alpha$ because we noticed that instances become unsatisfiable at very low densities. This is due to the existence of participants requesting as many meetings as available time slots. For them, there would be no feasible schedule if they had some forbidden time slot (this case never happens in the original instances). Experiments on these sets of instances are reported in Table 6.
+
+\begin{table}[h]
+\begin{center}
+\captionsetup{labelformat=empty}
+\caption{Table 5: Solving times, and best solutions found, on original B2B problems with CP solvers. Fairness is set to $d=2$. TO stands for time-out (7200 seconds).}
+\begin{tabular}{|l|l|l|l|l|l|l|l|l|l|}
+\hline
+\multirow{2}{*}{instance} & \multirow{2}{*}{MaxSAT} & \multicolumn{6}{|c|}{CP} & \multicolumn{2}{|c|}{\multirow{2}{*}{MIP}} \\
+\hline
+ &  & \multicolumn{2}{|c|}{Chuffed} & \multicolumn{2}{|c|}{Gecode} & \multicolumn{2}{|c|}{Cplex} &  &  \\
+\hline
+forum-13 & 2.5 & 2891.2 & 0 & TO & 55 & 4174.0 & 0 & 648.4 & 0 \\
+\hline
+forum-13crafb & 23.3 & 1725.6 & 6 & TO &  & TO &  & TO & 12 \\
+\hline
+forum-13crafc & 2.3 & TO & 14 & TO & 56 & TO & 10 & TO & 8 \\
+\hline
+forum-14 & 5.1 & 873.9 & 2 & TO &  & TO &  & TO & 21 \\
+\hline
+forumt-14 & 0.5 & 5.6 & 5 & TO & 27 & 3201.5 & 5 & 44.9 & 5 \\
+\hline
+forumt-14crafc & 0.9 & 20.2 & 5 & TO & 24 & 3866.3 & 5 & 894.2 & 5 \\
+\hline
+forumt-14crafd & 0.4 & 20.9 & 4 & TO &  & 3726.6 & 4 & 217.6 & 4 \\
+\hline
+forumt-14crafe & 0.6 & 26.3 & 5 & TO &  & TO & 6 & 1311.8 & 5 \\
+\hline
+tic-12 & 0.1 & 0.8 & 0 & TO & 10 & 258.0 & 0 & 13.8 & 0 \\
+\hline
+tic-12crafc & 0.3 & 1.2 & 0 & TO & 10 & 278.1 & 0 & 8.9 & 0 \\
+\hline
+tic-13 & 0.4 & 16.9 & 0 & TO & 15 & 3595.7 & 0 & 162.5 & 0 \\
+\hline
+tic-13crafb & 0.4 & 2.0 & 0 & TO & 14 & 1842.4 & 0 & 44.1 & 0 \\
+\hline
+tic-13crafc & 5.8 & 518.2 & 4 & TO &  & TO & 4 & 128.6 & 4 \\
+\hline
+tic-14crafa & 1.0 & 22.4 & 0 & TO &  & 6955.3 & 0 & 326.3 & 0 \\
+\hline
+tic-14crafc & 0.8 & 24.1 & 0 & TO &  & 4986.6 & 0 & 628.1 & 0 \\
+\hline
+tic-14crafd & 0.8 & 6.2 & 0 & TO &  & 6375.9 & 0 & 194.7 & 0 \\
+\hline
+ticf-13crafa & 2.2 & 2473.4 & 0 & TO & 53 & TO & 5 & 1583.6 & 0 \\
+\hline
+ticf-13crafb & 22.3 & 2291.9 & 3 & TO &  & TO &  & TO & 17 \\
+\hline
+ticf-13crafc & 3.7 & TO & 13 & TO & 56 & TO & 19 & TO & 3 \\
+\hline
+ticf-14crafa & 7.6 & 1714.8 & 0 & TO &  & TO &  & TO & 22 \\
+\hline
+\#solved & 20 & 18 &  & 0 &  & 11 &  & 14 &  \\
+\hline
+\end{tabular}
+\end{center}
+\end{table}
+
+It can be observed that MaxSAT is the best solving approach, solving again all the instances. On some instances it is three orders of magnitude faster than the other approaches. However MIP is slightly faster for proving infeasibility, although it is the approach that solves the smallest number of benchmarks.
+
+\subsection*{7.4.3 Fixed Meetings}
+In the second modification, we introduce randomly chosen fixed meetings. In particular, we vary the density $\beta$ of fixed meetings, with $0 \leq \beta \leq 100$, where $\beta=0$ means that no meeting is fixed and $\beta=100$ corresponds to the instance in which all meetings have to be scheduled in a fixed time slot. In order to generate these instances, we select $\beta \%$ randomly chosen meetings, which are assigned to a randomly chosen time slot each. Additionally, we only allow fixed meetings in a time slot if none of the participants to the meeting has this time slot as forbidden or another fixed meeting in it. We evaluate this modification with $\beta=\{20,40\} \%$. Again, bigger $\beta$ results in a majority of unsatisfiable instances. Experiments on these sets of instances are reported in Table 7.
+
+\begin{table}[h]
+\begin{center}
+\captionsetup{labelformat=empty}
+\caption{Table 6: Solving times, and best solutions found ('-' meaning unsatisfiability reported), on instances with a density of forbidden time slots $\alpha=0.3 \%$ and $\alpha=0.7 \%$. Fairness is set to $d=2$. TO stands for time-out (7200 seconds).}
+\begin{tabular}{|l|l|l|l|l|l|l|}
+\hline
+\multirow{2}{*}{instance} & \multicolumn{3}{|c|}{$\alpha=0.3 \%$} & \multicolumn{3}{|c|}{$\alpha=0.7 \%$} \\
+\hline
+ & MaxSAT & Chuffed & MIP & MaxSAT & Chuffed & MIP \\
+\hline
+forum-13 & 2.1 & 0 & 1563.40 & 2.0 & 0 & 2834.30 \\
+\hline
+forum-13crafb & 38.0 & 5 & TO 22 & 28.4 & 5 & TO 26 \\
+\hline
+forum-13crafc & 5.6 & 1 & TO 8 & 7.6 & 1 & TO 4 \\
+\hline
+forum-14 & 6.8 & 0 & TO 34 & 0.7 & - & 0.1 \\
+\hline
+forumt-14 & 1.0 & 0 & 244.20 & 0.3 & - & 0.1 \\
+\hline
+forumt-14crafc & 0.8 & 0 & 296.40 & 0.3 & - & 0.1 \\
+\hline
+forumt-14crafd & 0.3 & - & 0.1 - & 0.3 & - & 0.1 \\
+\hline
+forumt-14crafe & 0.3 & - & 0.1 - & 0.5 & - & 0.1 \\
+\hline
+tic-12 & 0.2 & - & 0.1 - & 0.1 & - & 0.1 \\
+\hline
+tic-12crafc & 0.3 & - & 0.1 - & 0.7 & - & 0.1 \\
+\hline
+tic-13 & 0.3 & - & 0.1 - & 0.3 & - & 0.1 \\
+\hline
+tic-13crafb & 0.3 & 0 & 11.60 & 0.5 & - & 0.1 \\
+\hline
+tic-13crafc & 0.3 & - & 0.1 - & 0.3 & - & 0.1 \\
+\hline
+tic-14crafa & 1.0 & 0 & 181.70 & 0.3 & - & 0.2 \\
+\hline
+tic-14crafc & 0.8 & 0 & 235.90 & 0.4 & 2.5 & 0.1 \\
+\hline
+tic-14crafd & 0.4 & - & 0.1 - & 0.3 & - & 0.1 \\
+\hline
+ticf-13crafa & 2.3 & 0 & 1042.10 & 2.0 & 0 & 2548.60 \\
+\hline
+ticf-13crafb & 37.4 & 5 & TO 22 & 28.3 & 5 & TO 22 \\
+\hline
+ticf-13crafc & 5.2 & 1 & TO 7 & 7.4 & 1 & TO 4 \\
+\hline
+ticf-14crafa & 6.6 & 0 & TO 34 & 0.4 & - & - \\
+\hline
+\#solved & 20 & 18 & 14 & 20 & 18 & 16 \\
+\hline
+\end{tabular}
+\end{center}
+\end{table}
+
+The introduction of fixed meetings results in a significant increase of optimums, some of them reaching to 50 breaks. We have observed that some of the infeasibilities are due to the homogeneity constraint (notice that with a higher number of holes, fairness may become more difficult). This increase of optimums does not hurt at all the MaxSAT approach, which dominates again the other approaches and notably reduces the solving times compared to the original instances. This improvement in solving times also applies to Chuffed, which now is able to solve all the instances with both densities. Regarding MIP, it worsens its performance with $\beta=20 \%$ but it is able to solve all instances with $\beta=40 \%$. Notice that with $\beta=40 \%$ we already have more than half of instances unsatisfiable and all approaches are able to solve them easily.
+
+\subsection*{7.4.4 Precedences}
+The third modification introduces random precedences among meetings. In this case, we modify the density $\gamma$ of precedences among the meetings of all participants, with $0 \leq \gamma \leq 100$, where $\gamma=0$ means that no meeting must precede another, whereas $\gamma=100$
+
+\begin{table}[h]
+\begin{center}
+\captionsetup{labelformat=empty}
+\caption{Table 7: Solving times, and best solutions found, on instances with a density of fixed meetings $\beta=20 \%$ and $\beta=40 \%$. Fairness is set to $d=2$. TO stands for time-out ( 7200 seconds).}
+\begin{tabular}{|l|l|l|l|l|l|l|l|l|}
+\hline
+\multirow{2}{*}{instance} & \multicolumn{4}{|c|}{$\beta=20 \%$} & \multicolumn{4}{|c|}{$\beta=40 \%$} \\
+\hline
+ & MaxSAT &  & Chuffed & MIP & MaxSAT &  & Chuffed & MIP \\
+\hline
+forum-13 & 1.8 & 20 & 90.920 & 1632.5820 & 1.4 & 49 & 30.849 & 27.449 \\
+\hline
+forum-13crafb & 2.2 & 30 & 149.630 & TO 33 & 0.4 & - & 0.1 - & 0.1 \\
+\hline
+forum-13crafc & 1.8 & 20 & 327.320 & TO 21 & 1.4 & 50 & 98.050 & 116.850 \\
+\hline
+forum-14 & 4.7 & 20 & 725.920 & TO 38 & 0.7 & - & 8.6 & 0.8 \\
+\hline
+forumt-14 & 0.5 & 7 & 36.77 & 92.87 & 0.3 & - & 1.8 & 0.2 \\
+\hline
+forumt-14crafc & 0.5 & 7 & 30.37 & 307.27 & 0.4 & - & 1.8 & 0.1 \\
+\hline
+forumt-14crafd & 0.4 & 9 & 15.19 & 18.19 & 0.4 & - & 1.9 & 0.1 \\
+\hline
+forumt-14crafe & 0.5 & 9 & 19.19 & 40.19 & 0.3 & - & 2.1 & 0.1 \\
+\hline
+tic-12 & 0.1 & 1 & 0.91 & 1.11 & 0.1 & - & 0.6 & 0.1 \\
+\hline
+tic-12crafc & 0.3 & 1 & 1.11 & 1.01 & 0.2 & - & 0.6 & 0.1 \\
+\hline
+tic-13 & 0.4 & 2 & 1.92 & 47.22 & 0.5 & 13 & 13.313 & 6.013 \\
+\hline
+tic-13crafb & 0.2 & 1 & 3.21 & 23.51 & 2.0 & 16 & 2.216 & 1.416 \\
+\hline
+tic-13crafc & 1.0 & 6 & 19.76 & 13.26 & 15.7 & 16 & 1892.116 & 6.616 \\
+\hline
+tic-14crafa & 0.5 & 2 & 12.12 & 116.82 & 0.3 & - & 1.9 & 0.1 \\
+\hline
+tic-14crafc & 0.6 & 3 & 30.63 & 140.43 & 0.4 & - & 2.0 & 0.1 \\
+\hline
+tic-14crafd & 0.4 & 2 & 17.22 & 97.92 & 0.4 &  & 2.0 & 0.2 \\
+\hline
+ticf-13crafa & 2.1 & 20 & 93.020 & 3600.320 & 1.2 & 49 & 40.949 & 53.149 \\
+\hline
+ticf-13crafb & 2.5 & 27 & 208.927 & TO 30 & 0.7 & - & 0.1 & 0.1 \\
+\hline
+ticf-13crafc & 2.0 & 20 & 532.220 & TO 22 & 1.2 & 49 & 66.549 & 145.049 \\
+\hline
+ticf-14crafa & 4.9 & 21 & 791.521 & TO 36 & 0.5 & - & 13.5 & 0.7 \\
+\hline
+\#solved & 20 &  & 20 & 14 & 20 &  & 20 & 20 \\
+\hline
+\end{tabular}
+\end{center}
+\end{table}
+
+corresponds to the case where, for each participant, all her meetings must be preceded by another (which is trivially infeasible). We evaluate this modification with $\gamma=\{15,25\} \%$. Experiments on these sets of instances are reported in Table 8.
+
+Once more MaxSAT is the best approach solving all the instances, but this modification makes some of them a bit harder than the original ones. Chuffed is the second best solving technique, but again MIP is the fastest at solving unsatisfiable instances.
+
+\subsection*{7.4.5 Fairness}
+Finally, we analyze how the value of the fairness parameter $d$ affects the results. To this purpose, we set the value of fairness to $d=\{0,1,3\}$. We recall that the value $d$ represents the maximum difference in the number of breaks between any two participants. For instance, when $d=0$, all participants are forced to have the same number of breaks. We recall that the experiments presented before correspond to the case where $d=2$. Experiments on these sets of instances are reported in Tables 9, 10 and 11, respectively.
+
+\begin{table}[h]
+\begin{center}
+\captionsetup{labelformat=empty}
+\caption{Table 8: Solving times, and best solutions found ('-' meaning unsatisfiability reported), on instances with a density of precedences among meetings $\gamma=15 \%$ and $\gamma=25 \%$. Fairness is set to $d=2$.}
+\begin{tabular}{|l|l|l|l|l|l|l|}
+\hline
+\multirow{2}{*}{instance} & \multicolumn{3}{|c|}{$\gamma=15 \%$} & \multicolumn{3}{|c|}{$\gamma=25 \%$} \\
+\hline
+ & MaxSAT & Chuffed & MIP & MaxSAT & Chuffed & MIP \\
+\hline
+forum-13 & 2.30 & 2053.00 & 4567.6 & 0 & - & 0.1 - \\
+\hline
+forum-13crafb & 1.9 - & 10.7 - & 0.1 & - & - & 0.1 - \\
+\hline
+forum-13crafc & 2.41 & TO 12 & TO 7 & 1.3 & - & 0.1 - \\
+\hline
+forum-14 & 21.92 & 2085.32 & TO 34 & 2.5 & - & 0.1 - \\
+\hline
+forumt-14 & 0.45 & 37.85 & 504.25 & 1.0 & 5 & 2791.15 \\
+\hline
+forumt-14crafc & 0.95 & 42.75 & 569.15 & 1.5 & 5 & 1195.25 \\
+\hline
+forumt-14crafd & 0.44 & 46.44 & TO 6 & 1.4 & 4 & 1068.74 \\
+\hline
+forumt-14crafe & 1.05 & 49.75 & TO 5 & 0.9 & 5 & 5440.15 \\
+\hline
+tic-12 & 0.20 & 1.60 & 12.60 & 0.2 & 0 & 218.30 \\
+\hline
+tic-12crafc & 0.30 & 1.50 & 9.00 & 0.6 & 0 & 267.70 \\
+\hline
+tic-13 & 0.40 & 27.90 & 243.00 & 0.8 & 0 & 4698.00 \\
+\hline
+tic-13crafb & 0.70 & 27.50 & 846.00 & 0.6 & 0 & 565.80 \\
+\hline
+tic-13crafc & 6.84 & 485.64 & 195.84 & 6.7 & 4 & 3001.24 \\
+\hline
+tic-14crafa & 1.10 & 62.00 & 661.80 & 1.4 & 0 & TO 2 \\
+\hline
+tic-14crafc & 0.80 & 44.00 & 1265.00 & 1.3 & 0 & TO 2 \\
+\hline
+tic-14crafd & 0.80 & 52.70 & 787.70 & 1.5 & 0 & TO 5 \\
+\hline
+ticf-13crafa & 2.80 & 4185.20 & 4795.90 & 1.8 & - & 0.1 - \\
+\hline
+ticf-13crafb & 2.1 - & 6.6 - & 0.1 - & 2.1 & - & 0.1 - \\
+\hline
+ticf-13crafc & 3.91 & TO 12 & TO 7 & 1.7 & - & 0.1 - \\
+\hline
+ticf-14crafa & 170.50 & 7013.50 & TO 45 & 2.7 & - & 0.1 - \\
+\hline
+\#solved & 20 & 18 & 14 & 20 & 20 & 17 \\
+\hline
+\end{tabular}
+\end{center}
+\end{table}
+
+First of all we can observe that with $d=0$ there are a lot of unsatisfiable instances. Notice that there are instances with participants that cannot have any break in their schedules (because they have just one meeting or they have as many meeting as time periods). Therefore, all the problems with an optimum bigger than 0 in their corresponding original instance will become unsatisfiable by setting the fairness to $d=0$. Solving times are smaller for all the approaches. In fact, in this setting MIP is the second best, being able to close all the instances. For $d=1$ and $d=3$, no unsatisfiable instance appears and solving times are quite similar than with $d=2$. MaxSAT is again the best solving approach.
+
+\section*{8. Conclusions}
+We have precisely formulated the Business-to-Business Meeting Scheduling Optimization problem (B2BSOP) and presented a comparative study of different model-and-solve exact approaches to this problem. In particular, we have evaluated CP, MaxSAT and MIP formulations, and considered distinct CP solving technologies. The considered approaches are
+
+\begin{table}[h]
+\begin{center}
+\captionsetup{labelformat=empty}
+\caption{Table 9: Solving times, and best solutions found ('-' meaning unsatisfiability reported), on instances with fairness $d=0$.}
+\begin{tabular}{|l|l|l|l|l|l|l|}
+\hline
+instance & \multicolumn{2}{|c|}{MaxSAT} & \multicolumn{2}{|c|}{Chuffed} & \multicolumn{2}{|c|}{MIP} \\
+\hline
+forum-13 & 2.1 & 0 & 1190.4 & 0 & 38.9 & 0 \\
+\hline
+forum-13crafb & 1.4 & - & 7.2 & - & 0.4 & - \\
+\hline
+forum-13crafc & 1.6 & - & TO &  & 106.1 & - \\
+\hline
+forum-14 & 1.6 & - & 10.8 & - & 0.4 & - \\
+\hline
+forumt-14 & 0.2 & - & 5.5 & - & 0.1 & - \\
+\hline
+forumt-14crafc & 0.2 & - & 4.6 & - & 0.1 & - \\
+\hline
+forumt-14crafd & 0.2 & - & 5.0 & - & 0.1 & - \\
+\hline
+forumt-14crafe & 0.2 & - & 4.5 & - & 0.2 & - \\
+\hline
+tic-12 & 0.2 & 0 & 2.3 & 0 & 0.2 & 0 \\
+\hline
+tic-12crafc & 0.2 & 0 & 2.3 & 0 & 0.1 & 0 \\
+\hline
+tic-13 & 0.3 & 0 & 6.1 & 0 & 2.8 & 0 \\
+\hline
+tic-13crafb & 0.3 & 0 & 5.8 & 0 & 0.2 & 0 \\
+\hline
+tic-13crafc & 0.2 & - & 4.2 & - & 1.1 & - \\
+\hline
+tic-14crafa & 0.6 & 0 & 5.6 & 0 & 0.6 & 0 \\
+\hline
+tic-14crafc & 0.6 & 0 & 4.5 & 0 & 2.6 & 0 \\
+\hline
+tic-14crafd & 0.3 & 0 & 5.5 & 0 & 0.8 & 0 \\
+\hline
+ticf-13crafa & 2.3 & 0 & 3595.5 & 0 & 38.4 & 0 \\
+\hline
+ticf-13crafb & 1.5 & - & 8.4 & - & 0.6 & - \\
+\hline
+ticf-13crafc & 2.2 & - & TO &  & 914.8 & - \\
+\hline
+ticf-14crafa & 6.3 & 0 & 67.2 & 0 & 3736.4 & 0 \\
+\hline
+\#solved & 20 &  & 18 &  & 20 &  \\
+\hline
+\end{tabular}
+\end{center}
+\end{table}
+
+refinements and improvements of the best approaches as reported by Pesant et al. (2015) and Bofill et al. (2015). In particular:
+
+\begin{itemize}
+  \item We consider some extensions of the problem with additional constraints.
+  \item We provide a complete MiniZinc model, and details on how to build the three variants tested in the experiments.
+  \item We provide a much more compact automaton to identify participants' schedules breaks for optimization.
+  \item We compare the performance of the four MiniZinc models with three distinct solving technologies: CP (Gecode), Lazy Clause Generation (Chuffed) and Linear Integer Programming (Cplex).
+  \item We provide further details of the MaxSAT model and extend it to deal with the new constraints.
+  \item We provide two more refinements of the encoding that improve even more the MaxSAT approach performance.
+\end{itemize}
+
+\begin{table}[h]
+\begin{center}
+\captionsetup{labelformat=empty}
+\caption{Table 10: Solving times, and best solutions found, on instances with fairness $d=1$.}
+\begin{tabular}{|l|l|l|l|l|l|l|}
+\hline
+instance & \multicolumn{2}{|c|}{MaxSAT} & \multicolumn{2}{|c|}{Chuffed} & \multicolumn{2}{|c|}{MIP} \\
+\hline
+forum-13 & 1.8 & 0 & 3604.0 & 0 & 616.0 & 0 \\
+\hline
+forum-13crafb & 43.4 & 6 & 3071.2 & 6 & TO & 21 \\
+\hline
+forum-13crafc & 2.4 & 1 & TO & 13 & TO & 6 \\
+\hline
+forum-14 & 6.2 & 2 & 1600.0 & 2 & TO & 45 \\
+\hline
+forumt-14 & 0.4 & 5 & 5.8 & 5 & 153.8 & 5 \\
+\hline
+forumt-14crafc & 0.5 & 5 & 20.8 & 5 & 216.3 & 5 \\
+\hline
+forumt-14crafd & 0.5 & 4 & 17.3 & 4 & TO & 5 \\
+\hline
+forumt-14crafe & 0.6 & 5 & 21.3 & 5 & 2016.3 & 5 \\
+\hline
+tic-12 & 0.1 & 0 & 0.9 & 0 & 10.8 & 0 \\
+\hline
+tic-12crafc & 0.1 & 0 & 1.1 & 0 & 10.4 & 0 \\
+\hline
+tic-13 & 0.3 & 0 & 12.9 & 0 & 13.5 & 0 \\
+\hline
+tic-13crafb & 0.2 & 0 & 2.4 & 0 & 31.6 & 0 \\
+\hline
+tic-13crafc & 6.1 & 4 & 516.2 & 4 & 98.1 & 4 \\
+\hline
+tic-14crafa & 0.7 & 0 & 21.5 & 0 & 37.9 & 0 \\
+\hline
+tic-14crafc & 0.7 & 0 & 16.0 & 0 & 301.2 & 0 \\
+\hline
+tic-14crafd & 0.6 & 0 & 5.1 & 0 & 177.5 & 0 \\
+\hline
+ticf-13crafa & 2.3 & 0 & 1629.6 & 0 & 1381.6 & 0 \\
+\hline
+ticf-13crafb & 28.9 & 3 & 2475.1 & 23 & TO & 26 \\
+\hline
+ticf-13crafc & 4.4 & 1 & TO & 11 & TO & 3 \\
+\hline
+ticf-14crafa & 6.6 & 0 & 1432.12 & 0 & TO & 50 \\
+\hline
+\#solved & 20 &  & 18 &  & 13 &  \\
+\hline
+\end{tabular}
+\end{center}
+\end{table}
+
+\begin{itemize}
+  \item We improve the MIP model by Pesant et al. (2015), and adapt it to deal with the new constraints.
+\end{itemize}
+
+The considered dataset consists of industrial B2B instances, with some variants including constraints like precedences between meetings and forbidden time slots. We contribute 180 new instances. Some of these variants increase the number of breaks of participants but do not make optimization harder. Experimental results show that the MaxSAT approach is state-of-the-art for this problem among the considered technologies. Interestingly, we have observed that the use of some implied constraints in the MaxSAT encodings improves their performance, allowing to solve all the instances of the extended benchmark set. Among CP solving technologies, Lazy Clause Generation dominates all other approaches, and using the smallest automaton on the reified schedules turns to be the best configuration for all solvers. Gecode is not competitive in the considered datasets, not being able to solve any instance within the given time limit. Using Cplex to solve the CP formulation provides a worse performance than using the native MIP model.
+
+As further work we consider to investigate other variants of the B2BSOP, such as considering meetings with more than two participants, or allowing a participant to have more than one meeting at a time (assuming, for instance, that a company is sending two representatives to the brokerage event). Another interesting property of the schedules is to minimize the number of location changes that participants have to do. This was prelimi-
+
+\begin{table}[h]
+\begin{center}
+\captionsetup{labelformat=empty}
+\caption{Table 11: Solving times, and best solutions found, on instances with fairness $d=3$.}
+\begin{tabular}{|l|l|l|l|l|l|l|}
+\hline
+instance & \multicolumn{2}{|c|}{MaxSAT} & \multicolumn{2}{|c|}{Chuffed} & \multicolumn{2}{|c|}{MIP} \\
+\hline
+forum-13 & 2.3 & 0 & 1419.6 & 0 & 1026.9 & 0 \\
+\hline
+forum-13crafb & 11.9 & 6 & 1401.6 & 6 & TO & 17 \\
+\hline
+forum-13crafc & 2.7 & 1 & TO & 12 & TO & 3 \\
+\hline
+forum-14 & 7.2 & 2 & 1064.0 & 2 & TO & 53 \\
+\hline
+forumt-14 & 0.4 & 5 & 4.8 & 5 & 213.0 & 5 \\
+\hline
+forumt-14crafc & 0.8 & 5 & 24.3 & 5 & 246.1 & 5 \\
+\hline
+forumt-14crafd & 0.5 & 4 & 21.2 & 4 & 87.5 & 4 \\
+\hline
+forumt-14crafe & 0.5 & 5 & 38.7 & 5 & 814.6 & 5 \\
+\hline
+tic-12 & 0.2 & 0 & 0.8 & 0 & 18.4 & 0 \\
+\hline
+tic-12crafc & 0.2 & 0 & 1.7 & 0 & 6.2 & 0 \\
+\hline
+tic-13 & 0.6 & 0 & 21.9 & 0 & 189.3 & 0 \\
+\hline
+tic-13crafb & 0.3 & 0 & 2.1 & 0 & 80.0 & 0 \\
+\hline
+tic-13crafc & 3.9 & 4 & 499.7 & 4 & 87.2 & 4 \\
+\hline
+tic-14crafa & 0.7 & 0 & 31.5 & 0 & 227.4 & 0 \\
+\hline
+tic-14crafc & 1.0 & 0 & 37.9 & 0 & 143.1 & 0 \\
+\hline
+tic-14crafd & 0.6 & 0 & 5.9 & 0 & 195.5 & 0 \\
+\hline
+ticf-13crafa & 2.6 & 0 & 5917.4 & 0 & 2964.9 & 0 \\
+\hline
+ticf-13crafb & 27.0 & 3 & 3328.2 & 3 & TO & 11 \\
+\hline
+ticf-13crafc & 4.4 & 1 & TO & 10 & TO & 14 \\
+\hline
+ticf-14crafa & 7.5 & 0 & 4211.5 & 0 & TO & 30 \\
+\hline
+\#solved & 20 &  & 18 &  & 14 &  \\
+\hline
+\end{tabular}
+\end{center}
+\end{table}
+
+narily studied by Bofill et al. (2014), but we believe that a more integrated approach should be considered.
+
+\section*{Acknowledgments}
+Work partially supported by grants PGC2018-101216-B-I00 and RTI2018-095609-B-I00 (MICINN/FEDER, UE), fellowships FJCI-2017-32420, IJC2019-040489-I (MICINN/Juan de la Cierva), Ayudas para Contratos Predoctorales 2016 (grant number BES-2016-076867, funded by MINECO and co-funded by FSE), AMU Institut Archiméde and NSERC Discovery Grant 218028/2017.
+
+We thank the anonymous referees for their useful comments that helped us to improve the paper. We were able to obtain a better performance of the Minizinc with Chuffed solver approach thanks to several suggestions from them.
+
+
+\end{document}

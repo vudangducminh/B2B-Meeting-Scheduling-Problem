@@ -1,4 +1,3 @@
-
 import sys
 from pysat.pb import *
 from pysat.formula import CNF, WCNF
@@ -722,5 +721,3 @@ for input_file in input_files:
             f.write("NO SOLUTION FOUND\n")
     
     print(f"Output written to: {out_path}")
-                
-
