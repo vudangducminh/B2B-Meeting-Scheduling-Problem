@@ -1,9 +1,9 @@
 Input: ticf-14crafa.original.dzn
 ============================================================
-Total Runtime: 12.7801 seconds
-Input parsing: 0.0013 seconds
-Constraint building: 1.0109 seconds
-MaxSAT solving: 11.1141 seconds
+Total Runtime: 16.2592 seconds
+Input parsing: 0.0279 seconds
+Constraint building: 1.3124 seconds
+MaxSAT solving: 14.0174 seconds
 ============================================================
 
 Total variables: 321490

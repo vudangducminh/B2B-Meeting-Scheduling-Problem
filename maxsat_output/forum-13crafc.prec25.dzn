@@ -1,0 +1,12 @@
+Input: forum-13crafc.prec25.dzn
+============================================================
+Total Runtime: 3.6236 seconds
+Input parsing: 0.0287 seconds
+Constraint building: 0.7913 seconds
+MaxSAT solving: 2.3057 seconds
+============================================================
+
+Total variables: 175946
+Total clauses: 370266
+MaxSAT found with cost: 0
+NO SOLUTION FOUND

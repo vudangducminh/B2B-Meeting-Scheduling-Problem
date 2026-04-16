@@ -1,7 +1,7 @@
 import sys
 from pysat.pb import *
 from pysat.formula import CNF, WCNF
-from pysat.solvers import Glucose4
+from pysat.solvers import Solver
 from pysat.card import CardEnc, EncType, ITotalizer
 from pysat.examples.rc2 import RC2
 from math import inf
@@ -488,8 +488,7 @@ for input_file in input_files:
     tot = ITotalizer(lits=arr, ubound=nBusiness*max_break_count, top_id=variable_size)
     variable_size = max(variable_size, tot.cnf.nv)
     # Binary search to find the minimum number of sortedHole[p][t] = 1
-    solver = Glucose4(bootstrap_with=cnf)
-    solver.append_formula(cnf.clauses)
+    solver = Solver(name='cadical195', bootstrap_with=cnf)
     solver.append_formula(tot.cnf)
     assignment = None
     
@@ -529,7 +528,7 @@ for input_file in input_files:
                 if best > cost:
                     best = cost
                     assignment = model_set
-                r = mid - 1
+                r = min(cost - 1, mid - 1)
             else:
                 l = mid + 1
             if time.time() - solve_start > 3600:
