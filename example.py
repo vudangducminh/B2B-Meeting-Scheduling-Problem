@@ -17,11 +17,11 @@ test_counter = 0
 for input_file in input_files:
     test_counter += 1
     # Already solved these tests
-    if test_counter <= 130:
+    if test_counter <= 0:
         continue    
     # Get base filename
     base_name = os.path.basename(input_file)
-    output_file = f'./maxsat_output/{base_name}'
+    output_file = f'./example_output/{base_name}'
     
     print(f"\n{'='*60}")
     print(f"Processing: {base_name}")
@@ -30,7 +30,7 @@ for input_file in input_files:
     
     in_path = input_file
     out_path = output_file
-    if 'original' not in in_path:
+    if 'original' not in in_path and 'prec15' not in in_path and 'prec25' not in in_path:
         continue
     # Reset variables for each input file
     cnf = CNF()

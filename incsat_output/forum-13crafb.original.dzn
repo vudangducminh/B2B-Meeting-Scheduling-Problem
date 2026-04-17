@@ -1,9 +1,9 @@
 Input: forum-13crafb.original.dzn
 ============================================================
-Total Runtime: 18.1492 seconds
-Input parsing: 0.0037 seconds
-Constraint building: 1.8520 seconds
-Incremental SAT solving: 16.2933 seconds
+Total Runtime: 11.2416 seconds
+Input parsing: 0.0010 seconds
+Constraint building: 1.1031 seconds
+Incremental SAT solving: 10.1374 seconds
 ============================================================
 
 Total variables: 229649

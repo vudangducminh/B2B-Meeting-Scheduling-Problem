@@ -1,9 +1,9 @@
 Input: forum-13crafc.prec15.dzn
 ============================================================
-Total Runtime: 50.1726 seconds
-Input parsing: 0.0043 seconds
-Constraint building: 0.7213 seconds
-MaxSAT solving: 48.9577 seconds
+Total Runtime: 31.7578 seconds
+Input parsing: 0.0010 seconds
+Constraint building: 0.5406 seconds
+MaxSAT solving: 30.8402 seconds
 ============================================================
 
 Total variables: 175266

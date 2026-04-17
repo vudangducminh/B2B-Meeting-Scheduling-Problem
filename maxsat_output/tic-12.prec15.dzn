@@ -1,9 +1,9 @@
 Input: tic-12.prec15.dzn
 ============================================================
-Total Runtime: 0.4130 seconds
-Input parsing: 0.0032 seconds
-Constraint building: 0.0748 seconds
-MaxSAT solving: 0.2665 seconds
+Total Runtime: 0.3337 seconds
+Input parsing: 0.0008 seconds
+Constraint building: 0.0646 seconds
+MaxSAT solving: 0.2110 seconds
 ============================================================
 
 Total variables: 24310

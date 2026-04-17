@@ -497,7 +497,7 @@ for input_file in input_files:
         l = 0
         r = max_bound 
         while r >= l:
-            mid = (l + r) // 2
+            mid = int(l + (r - l + 1) / 5)
             bound_cnf = CardEnc.atmost(lits=[sortedHole[p][j] for p in range(1, nBusiness + 1) for j in range(1, max_break_count + 1)], bound=mid, encoding=EncType.seqcounter, top_id=variable_size)
             solver = Solver(name='cadical195', bootstrap_with=cnf)
             solver.append_formula(bound_cnf)

@@ -1,9 +1,9 @@
 Input: ticf-13crafc.prec15.dzn
 ============================================================
-Total Runtime: 107.0037 seconds
-Input parsing: 0.0015 seconds
-Constraint building: 0.7113 seconds
-MaxSAT solving: 105.8188 seconds
+Total Runtime: 86.4764 seconds
+Input parsing: 0.0007 seconds
+Constraint building: 0.5487 seconds
+MaxSAT solving: 85.5649 seconds
 ============================================================
 
 Total variables: 175266
