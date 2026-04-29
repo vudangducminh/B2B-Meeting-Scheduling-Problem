@@ -1,12 +1,12 @@
 Input: ticf-13crafa.prec25.dzn
 ============================================================
-Total Runtime: 2.1856 seconds
-Input parsing: 0.0008 seconds
-Constraint building: 0.5531 seconds
-MaxSAT solving: 1.2542 seconds
+Total Runtime: 8.6667 seconds
+Input parsing: 0.0012 seconds
+Constraint building: 1.8003 seconds
+MaxSAT solving: 5.3762 seconds
 ============================================================
 
-Total variables: 181874
-Total clauses: 390968
+Total variables: 470993
+Total clauses: 772312
 MaxSAT found with cost: 0
 NO SOLUTION FOUND

@@ -513,7 +513,7 @@ for input_file in input_files:
         best = max_bound
         assignment = model_set
         l = 0
-        r = max_bound 
+        r = max_bound
         while r >= l:
             mid = int(l + (r - l + 1) / 5)
             assumps = [-tot.rhs[mid]]       
