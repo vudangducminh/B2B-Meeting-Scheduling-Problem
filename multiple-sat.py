@@ -1,14 +1,16 @@
-
 import sys
 from pysat.pb import *
 from pysat.formula import CNF, WCNF
 from pysat.solvers import Solver
-from pysat.card import CardEnc, EncType
-from math import inf
+from pysat.card import CardEnc, EncType, ITotalizer
+from pysat.examples.rc2 import RC2
+from math import inf, sqrt
+import signal
 import subprocess
 import time
 import os
 import glob
+
 
 # Get all input files
 input_files = sorted(glob.glob('./input/*.dzn'))
@@ -22,7 +24,7 @@ for input_file in input_files:
         continue    
     # Get base filename
     base_name = os.path.basename(input_file)
-    output_file = f'./multiple-sat_output/{base_name}'
+    output_file = f'./example_output/{base_name}'
     
     print(f"\n{'='*60}")
     print(f"Processing: {base_name}")
@@ -31,7 +33,7 @@ for input_file in input_files:
     
     in_path = input_file
     out_path = output_file
-    if 'original' not in in_path:
+    if 'original' not in in_path: # and 'prec15' not in in_path and 'prec25' not in in_path:
         continue
     # Reset variables for each input file
     cnf = CNF()
@@ -222,6 +224,52 @@ for input_file in input_files:
         
         return nBusiness, nMeetings, nTables, nTotalSlots, nMorningSlots, requested, meetingsxBusiness, nMeetingsBusiness, forbidden, fixed, precedences
 
+    def pairwise_AMO(lits):
+        clauses = []
+        for i in range(len(lits)):
+            for j in range(i + 1, len(lits)):
+                clauses.append([-lits[i], -lits[j]])
+        return clauses
+    
+    def ALO(lits):
+        clauses = [lits]
+        return clauses
+
+    # Exactly 1
+    def commander_EO(lits):
+        global variable_size
+        sz = len(lits)
+        if sz == 0:
+            return
+        if sz == 1:
+            cnf.append([lits[0]])
+            return
+        # Base case: small enough to encode directly with pairwise AMO + ALO
+        if sz <= 4:
+            cnf.extend(pairwise_AMO(lits))
+            cnf.extend(ALO(lits))
+            return
+
+        group_size = max(2, int(sqrt(sz)) + (1 if int(sqrt(sz)) ** 2 < sz else 0))
+        commanders = []
+        for i in range(0, sz, group_size):
+            group = lits[i:min(sz, i + group_size)]
+            c = variable_size + 1
+            variable_size += 1
+            commanders.append(c)
+            # AMO within the group
+            cnf.extend(pairwise_AMO(group))
+            # c_i -> ALO(group)
+            cnf.append([-c] + group)
+            # X_j -> c_i:
+            for x in group:
+                cnf.append([-x, c])
+
+        # Exactly one commander is true
+        cnf.extend(pairwise_AMO(commanders))
+        cnf.extend(ALO(commanders))
+
+
     start_time = time.time()
     nBusiness, nMeetings, nTables, nTotalSlots, nMorningSlots, requested, meetingsxBusiness, nMeetingsBusiness, forbidden, fixed, precedences = read_input()
     input_time = time.time()
@@ -275,28 +323,26 @@ for input_file in input_files:
         for t in range(1, nTotalSlots + 1):
             lits = [x[m][t] for m in meetingsxBusiness[p]]
             if len(lits) > 1:
-                atmost_one = CardEnc.atmost(
-                    lits=lits, bound=1, encoding=EncType.seqcounter, top_id=variable_size
-                )
-                variable_size = max(variable_size, atmost_one.nv)
-                cnf.extend(atmost_one.clauses)
+                # atmost_one = CardEnc.atmost(
+                #     lits=lits, bound=1, encoding=EncType.seqcounter, top_id=variable_size
+                # )
+                atmost_one = pairwise_AMO(lits)
+                cnf.extend(atmost_one)
+
     # Each meeting happened exactly once (20), (22), (24)
     for m in range(1, nMeetings + 1):
         if requested[m][2] == 3: # No time restriction
             lits = [x[m][t] for t in range(1, nTotalSlots + 1)]
-            clauses = CardEnc.equals(lits=lits, bound=1, encoding=EncType.seqcounter, top_id=variable_size)
-            cnf.extend(clauses)
-            variable_size = max(variable_size, clauses.nv)
+            # clauses = CardEnc.equals(lits=lits, bound=1, encoding=EncType.seqcounter, top_id=variable_size)
+            commander_EO(lits)
         elif requested[m][2] == 1: # Morning
             lits = [x[m][t] for t in range(1, nMorningSlots + 1)]
-            clauses = CardEnc.equals(lits=lits, bound=1, encoding=EncType.seqcounter, top_id=variable_size)
-            cnf.extend(clauses)
-            variable_size = max(variable_size, clauses.nv)
+            # clauses = CardEnc.equals(lits=lits, bound=1, encoding=EncType.seqcounter, top_id=variable_size)
+            commander_EO(lits)
         else: # Afternoon
             lits = [x[m][t] for t in range(nMorningSlots + 1, nTotalSlots + 1)]
-            clauses = CardEnc.equals(lits=lits, bound=1, encoding=EncType.seqcounter, top_id=variable_size)
-            cnf.extend(clauses)
-            variable_size = max(variable_size, clauses.nv)
+            # clauses = CardEnc.equals(lits=lits, bound=1, encoding=EncType.seqcounter, top_id=variable_size)
+            commander_EO(lits)
 
     # At most nTables meetings can happen at the same time (21)
     for t in range(1, nTotalSlots + 1):
@@ -326,21 +372,12 @@ for input_file in input_files:
         for t in forbidden[p]:
             cnf.append([-y[p][t]])
     
-    # Handle precedence constraints (28)
+    # Handle meeting precedences (28)
     for m in range(1, nMeetings + 1):
-        for prec in precedences[m]:
-            # Add staircase constraints (meeting prec must be scheduled before meeting m)
-            sfx = [0 for _ in range(nTotalSlots + 1)]
-            sfx[nTotalSlots] = x[prec][nTotalSlots]
-            for t in range(nTotalSlots - 1, 0, -1):
-                sfx[t] = variable_size + 1
-                variable_size += 1
-                cnf.append([-x[prec][t], sfx[t]])  # x[prec][t] => sfx[t]
-                cnf.append([-sfx[t + 1], sfx[t]])  # sfx[t + 1] => sfx[t]
-                cnf.append([x[prec][t], sfx[t + 1], -sfx[t]])  # not x[prec][t] and not sfx[t + 1] => not sfx[t]
-            # Strict precedence: prec must be at slot < t (not at t or later)
-            for t in range(1, nTotalSlots + 1):
-                cnf.append([-x[m][t], -sfx[t]])
+        for t in range(1, nTotalSlots + 1):
+            for prec in precedences[m]:
+                for tt in range(t, nTotalSlots + 1):
+                    cnf.append([-x[prec][tt], -x[m][t]])
             
     # If a meeting is scheduled at time slot t then y[p1][t] and y[p2][t] must be true (29)
     # => x[m][t] -> y[p1][t] and y[p2][t]
@@ -394,29 +431,17 @@ for input_file in input_files:
     for p in range(1, nBusiness + 1):
         end_lits = [h[p][t] for t in range(1, nTotalSlots)]  # endHole over 1..|T|-1
 
+        # Build a single cardinality network (ITotalizer) over end_lits (Constraint 36).
+        # rhs[j-1] is true iff count(end_lits) >= j, which is exactly sortedHole[p][j].
+        totalizer = ITotalizer(lits=end_lits, ubound=max_break_count, top_id=variable_size)
+        cnf.extend(totalizer.cnf)
+        variable_size = max(variable_size, totalizer.cnf.nv)
         for j in range(1, max_break_count + 1):
             s = sortedHole[p][j]
-
-            # s -> AtLeast(j, end_lits)
-            atleast_j = CardEnc.atleast(
-                lits=end_lits, bound=j, encoding=EncType.seqcounter, top_id=variable_size
-            )
-            variable_size = max(variable_size, atleast_j.nv)
-            for c in atleast_j.clauses:
-                cnf.append([-s] + c)
-
-            # ¬s -> AtMost(j-1, end_lits)   (equivalently s ∨ clause)
-            atmost_jm1 = CardEnc.atmost(
-                lits=end_lits, bound=j - 1, encoding=EncType.seqcounter, top_id=variable_size
-            )
-            variable_size = max(variable_size, atmost_jm1.nv)
-            for c in atmost_jm1.clauses:
-                cnf.append([s] + c)
-
-            # Optional (redundant but useful): monotonic unary order
-            # sortedHole[p][j+1] -> sortedHole[p][j]
-            if j < max_break_count:
-                cnf.append([-sortedHole[p][j + 1], sortedHole[p][j]])
+            r = totalizer.rhs[j - 1]
+            # s <-> rhs[j-1]
+            cnf.append([-s, r])
+            cnf.append([s, -r])
 
     # max[j] and min[j] are unary bounds on maximum/minimum breaks among participants.
     max_break = [0 for _ in range(max_break_count + 1)]
@@ -468,17 +493,34 @@ for input_file in input_files:
     # Imp1: The number of meetings of a participant p must equal nMeetingsBusiness[p] (43)
     for p in range(1, nBusiness + 1):
         lits = [y[p][t] for t in range(1, nTotalSlots + 1)]
-        clauses = CardEnc.equals(lits=lits, bound=nMeetingsBusiness[p], encoding=EncType.seqcounter, top_id=variable_size)
+        clauses = CardEnc.equals(lits=lits, bound=nMeetingsBusiness[p], encoding=EncType.cardnetwrk, top_id=variable_size)
         cnf.extend(clauses)
         variable_size = max(variable_size, clauses.nv)
     
     # Imp2: The number of participants having a meeting in a given time slot is bounded by twice the number of available locations (44)
+    # for t in range(1, nTotalSlots + 1):
+    #     lits = [y[p][t] for p in range(1, nBusiness + 1)]
+    #     clauses = CardEnc.atmost(lits=lits, bound=2*nTables, encoding=EncType.cardnetwrk, top_id=variable_size)
+    #     cnf.extend(clauses)
+    #     variable_size = max(variable_size, clauses.nv)
+
+    # Apply Itotalizer to (44)
     for t in range(1, nTotalSlots + 1):
         lits = [y[p][t] for p in range(1, nBusiness + 1)]
-        clauses = CardEnc.atmost(lits=lits, bound=2*nTables, encoding=EncType.seqcounter, top_id=variable_size)
-        cnf.extend(clauses)
-        variable_size = max(variable_size, clauses.nv)
+        if len(lits) > 2*nTables:
+            itotalizer = ITotalizer(lits=lits, ubound=2*nTables + 1, top_id=variable_size)
+            cnf.extend(itotalizer.cnf)
+            variable_size = max(variable_size, itotalizer.cnf.nv)
+            # Enforce at-most 2*nTables: forbid the (2*nTables+1)-th output being true
+            cnf.append([-itotalizer.rhs[2*nTables]])
+            for i in range(0, 2*nTables, 2):
+                if i + 1 < 2 * nTables:
+                    cnf.append([-itotalizer.rhs[i], itotalizer.rhs[i + 1]])
     
+    # Add hard clauses 
+    for clause in cnf.clauses:
+        wcnf.append(clause)  # Default weight is top (hard)
+
     solver = Solver(name='cadical195', bootstrap_with=cnf)
     assignment = None
     
